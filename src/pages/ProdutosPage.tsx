@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { produtosApi } from '@/api/services'
 import { Paginacao } from '@/components/Paginacao'
@@ -13,11 +13,13 @@ import {
   LoadingBlock,
   Modal,
   PageHeader,
+  SearchInput,
   Select,
   TableShell,
   Td,
   Th,
 } from '@/components/ui'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePaginacao } from '@/hooks/usePaginacao'
 import { categoriaProdutoLabel } from '@/lib/labels'
 import { formatCurrency, parseApiError } from '@/lib/utils'
@@ -35,13 +37,20 @@ const emptyForm = {
 export function ProdutosPage() {
   const queryClient = useQueryClient()
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
+  const [busca, setBusca] = useState('')
+  const buscaDebounced = useDebouncedValue(busca, 300)
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Produto | null>(null)
   const [form, setForm] = useState(emptyForm)
 
+  useEffect(() => {
+    setPagina(0)
+  }, [buscaDebounced, setPagina])
+
   const produtos = useQuery({
-    queryKey: ['produtos', pagina, tamanho],
-    queryFn: () => produtosApi.listar({ page: pagina, size: tamanho, sort: 'nome' }),
+    queryKey: ['produtos', pagina, tamanho, buscaDebounced],
+    queryFn: () =>
+      produtosApi.listar({ page: pagina, size: tamanho, sort: 'nome', busca: buscaDebounced }),
   })
 
   function fecharModal() {
@@ -131,12 +140,29 @@ export function ProdutosPage() {
       />
 
       {produtos.isLoading ? <LoadingBlock /> : null}
-      {!produtos.isLoading && lista.length === 0 ? (
-        <EmptyState title="Nenhum produto cadastrado" description="Cadastre a primeira vela ou kit." />
+      {produtos.isError ? (
+        <EmptyState title="Não foi possível carregar os produtos." description="Verifique a conexão com a API." />
       ) : null}
 
-      {lista.length > 0 ? (
-        <>
+      {!produtos.isLoading && !produtos.isError ? (
+        lista.length === 0 && !buscaDebounced.trim() ? (
+          <EmptyState title="Nenhum produto cadastrado" description="Cadastre a primeira vela ou kit." />
+        ) : (
+          <>
+            <div className="mb-4 max-w-md">
+              <SearchInput
+                placeholder="Buscar vela ou kit por nome..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
+            </div>
+            {lista.length === 0 ? (
+              <EmptyState
+                title="Nenhum produto encontrado"
+                description="Tente outro termo de busca ou cadastre uma nova vela ou kit."
+              />
+            ) : (
+              <>
           <TableShell>
             <thead>
               <tr>
@@ -173,7 +199,10 @@ export function ProdutosPage() {
           {produtos.data ? (
             <Paginacao meta={produtos.data} onPaginaChange={setPagina} onTamanhoChange={setTamanho} />
           ) : null}
-        </>
+              </>
+            )}
+          </>
+        )
       ) : null}
 
       <Modal

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { insumosApi } from '@/api/services'
 import { Paginacao } from '@/components/Paginacao'
@@ -13,11 +13,13 @@ import {
   LoadingBlock,
   Modal,
   PageHeader,
+  SearchInput,
   Select,
   TableShell,
   Td,
   Th,
 } from '@/components/ui'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePaginacao } from '@/hooks/usePaginacao'
 import { categoriaInsumoLabel, unidadeLabel } from '@/lib/labels'
 import { formatCurrency, parseApiError } from '@/lib/utils'
@@ -35,13 +37,20 @@ const emptyForm = {
 export function InsumosPage() {
   const queryClient = useQueryClient()
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
+  const [busca, setBusca] = useState('')
+  const buscaDebounced = useDebouncedValue(busca, 300)
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Insumo | null>(null)
   const [form, setForm] = useState(emptyForm)
 
+  useEffect(() => {
+    setPagina(0)
+  }, [buscaDebounced, setPagina])
+
   const insumos = useQuery({
-    queryKey: ['insumos', pagina, tamanho],
-    queryFn: () => insumosApi.listar({ page: pagina, size: tamanho, sort: 'nome' }),
+    queryKey: ['insumos', pagina, tamanho, buscaDebounced],
+    queryFn: () =>
+      insumosApi.listar({ page: pagina, size: tamanho, sort: 'nome', busca: buscaDebounced }),
   })
 
   function fecharModal() {
@@ -130,12 +139,29 @@ export function InsumosPage() {
       />
 
       {insumos.isLoading ? <LoadingBlock /> : null}
-      {!insumos.isLoading && lista.length === 0 ? (
-        <EmptyState title="Nenhum material cadastrado" description="Cadastre cera, essência, potes e outros insumos." />
+      {insumos.isError ? (
+        <EmptyState title="Não foi possível carregar o estoque." description="Verifique a conexão com a API." />
       ) : null}
 
-      {lista.length > 0 ? (
-        <>
+      {!insumos.isLoading && !insumos.isError ? (
+        lista.length === 0 && !buscaDebounced.trim() ? (
+          <EmptyState title="Nenhum material cadastrado" description="Cadastre cera, essência, potes e outros insumos." />
+        ) : (
+          <>
+            <div className="mb-4 max-w-md">
+              <SearchInput
+                placeholder="Buscar insumo por nome..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+              />
+            </div>
+            {lista.length === 0 ? (
+              <EmptyState
+                title="Nenhum material encontrado"
+                description="Tente outro termo de busca ou cadastre um novo insumo."
+              />
+            ) : (
+              <>
           <TableShell>
             <thead>
               <tr>
@@ -172,7 +198,10 @@ export function InsumosPage() {
           {insumos.data ? (
             <Paginacao meta={insumos.data} onPaginaChange={setPagina} onTamanhoChange={setTamanho} />
           ) : null}
-        </>
+              </>
+            )}
+          </>
+        )
       ) : null}
 
       <Modal
