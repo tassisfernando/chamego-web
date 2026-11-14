@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { Pencil, Plus } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { despesasApi, ferramentasApi, insumosApi } from '@/api/services'
+import { Paginacao } from '@/components/Paginacao'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
 import {
   Badge,
@@ -13,17 +14,18 @@ import {
   LoadingBlock,
   Modal,
   PageHeader,
-  SearchInput,
   Select,
   TableShell,
   Td,
   Textarea,
   Th,
 } from '@/components/ui'
+import { usePaginacao } from '@/hooks/usePaginacao'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { tipoDespesaLabel, unidadeLabel } from '@/lib/labels'
+import { minDataOperacao } from '@/lib/periodo'
 import { formatCurrency, formatDate, parseApiError, todayIso } from '@/lib/utils'
-import type { TipoDespesa, UnidadeMedida } from '@/types/api'
+import type { Despesa, TipoDespesa, UnidadeMedida } from '@/types/api'
 
 const emptyForm = {
   descricao: '',
@@ -39,28 +41,63 @@ const emptyForm = {
 
 export function GastosPage() {
   const queryClient = useQueryClient()
-  const { ano, mes, periodo, setPeriodo } = usePeriodo()
-  const [busca, setBusca] = useState('')
+  const { modo, ano, mes, periodo, setModo, setAno, setMes } = usePeriodo()
+  const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
+  const [editando, setEditando] = useState<Despesa | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   const despesas = useQuery({
-    queryKey: ['despesas', periodo],
-    queryFn: () => despesasApi.listar(periodo),
+    queryKey: ['despesas', periodo, pagina, tamanho],
+    queryFn: () =>
+      despesasApi.listar(periodo, { page: pagina, size: tamanho, sort: 'dataDespesa,desc' }),
   })
-  const insumos = useQuery({ queryKey: ['insumos'], queryFn: insumosApi.listar })
-  const ferramentas = useQuery({ queryKey: ['ferramentas'], queryFn: ferramentasApi.listar })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const ferramentas = useQuery({ queryKey: ['ferramentas-opcoes'], queryFn: ferramentasApi.opcoes })
 
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    return (despesas.data ?? []).filter((despesa) => {
-      if (!termo) return true
-      return (
-        despesa.descricao.toLowerCase().includes(termo) ||
-        tipoDespesaLabel[despesa.tipo].toLowerCase().includes(termo)
-      )
+  const lista = despesas.data?.conteudo ?? []
+
+  function fecharModal() {
+    setOpen(false)
+    setEditando(null)
+    setForm({ ...emptyForm, dataDespesa: todayIso() })
+  }
+
+  function abrirNovo() {
+    setEditando(null)
+    setForm({ ...emptyForm, dataDespesa: todayIso() })
+    setOpen(true)
+  }
+
+  function abrirEdicao(despesa: Despesa) {
+    setEditando(despesa)
+    setForm({
+      descricao: despesa.descricao,
+      dataDespesa: despesa.dataDespesa,
+      valor: String(despesa.valor),
+      quantidade: despesa.quantidade != null ? String(despesa.quantidade) : '',
+      unidadeMedida: despesa.unidadeMedida ?? 'UN',
+      tipo: despesa.tipo,
+      insumoId: despesa.insumoId ?? '',
+      ferramentaId: despesa.ferramentaId ?? '',
+      observacao: despesa.observacao ?? '',
     })
-  }, [busca, despesas.data])
+    setOpen(true)
+  }
+
+  function montarPayload() {
+    return {
+      descricao: form.descricao.trim(),
+      dataDespesa: form.dataDespesa,
+      valor: Number(form.valor),
+      quantidade: form.quantidade ? Number(form.quantidade) : undefined,
+      unidadeMedida: form.quantidade ? form.unidadeMedida : undefined,
+      tipo: form.tipo,
+      insumoId: form.tipo === 'INSUMO' ? form.insumoId : undefined,
+      ferramentaId: form.tipo === 'FERRAMENTA' ? form.ferramentaId : undefined,
+      observacao: form.observacao.trim() || undefined,
+    }
+  }
 
   const registrar = useMutation({
     mutationFn: despesasApi.registrar,
@@ -69,11 +106,27 @@ export function GastosPage() {
       queryClient.invalidateQueries({ queryKey: ['despesas'] })
       queryClient.invalidateQueries({ queryKey: ['financeiro'] })
       queryClient.invalidateQueries({ queryKey: ['insumos'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
       queryClient.invalidateQueries({ queryKey: ['ferramentas'] })
-      setForm({ ...emptyForm, dataDespesa: todayIso() })
-      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['ferramentas-opcoes'] })
+      fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível registrar o gasto.')),
+  })
+
+  const atualizar = useMutation({
+    mutationFn: ({ id }: { id: string }) => despesasApi.atualizar(id, montarPayload()),
+    onSuccess: () => {
+      toast.success('Gasto atualizado com sucesso.')
+      queryClient.invalidateQueries({ queryKey: ['despesas'] })
+      queryClient.invalidateQueries({ queryKey: ['financeiro'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
+      queryClient.invalidateQueries({ queryKey: ['ferramentas'] })
+      queryClient.invalidateQueries({ queryKey: ['ferramentas-opcoes'] })
+      fecharModal()
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar o gasto.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -87,18 +140,14 @@ export function GastosPage() {
       return
     }
 
-    registrar.mutate({
-      descricao: form.descricao.trim(),
-      dataDespesa: form.dataDespesa,
-      valor: Number(form.valor),
-      quantidade: form.quantidade ? Number(form.quantidade) : undefined,
-      unidadeMedida: form.quantidade ? form.unidadeMedida : undefined,
-      tipo: form.tipo,
-      insumoId: form.tipo === 'INSUMO' ? form.insumoId : undefined,
-      ferramentaId: form.tipo === 'FERRAMENTA' ? form.ferramentaId : undefined,
-      observacao: form.observacao.trim() || undefined,
-    })
+    if (editando) {
+      atualizar.mutate({ id: editando.id })
+      return
+    }
+    registrar.mutate(montarPayload())
   }
+
+  const salvando = registrar.isPending || atualizar.isPending
 
   return (
     <div>
@@ -107,8 +156,24 @@ export function GastosPage() {
         description="Saídas do período: compras de material, ferramentas e custos operacionais."
         actions={
           <>
-            <PeriodoFiltro ano={ano} mes={mes} onChange={setPeriodo} />
-            <Button type="button" onClick={() => setOpen(true)}>
+            <PeriodoFiltro
+              modo={modo}
+              ano={ano}
+              mes={mes}
+              onModoChange={(m) => {
+                setModo(m)
+                setPagina(0)
+              }}
+              onAnoChange={(a) => {
+                setAno(a)
+                setPagina(0)
+              }}
+              onMesChange={(m) => {
+                setMes(m)
+                setPagina(0)
+              }}
+            />
+            <Button type="button" onClick={abrirNovo}>
               <Plus className="size-4" />
               Novo gasto
             </Button>
@@ -116,47 +181,64 @@ export function GastosPage() {
         }
       />
 
-      <div className="mb-4 max-w-md">
-        <SearchInput value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar gasto…" />
-      </div>
-
       {despesas.isLoading ? <LoadingBlock /> : null}
-      {!despesas.isLoading && filtrados.length === 0 ? (
-        <EmptyState title="Nenhum gasto neste período" description="Registre compras e saídas para acompanhar o resultado." />
+      {!despesas.isLoading && lista.length === 0 ? (
+        <EmptyState
+          title="Nenhum gasto neste período"
+          description="Registre compras e saídas para acompanhar o resultado."
+        />
       ) : null}
 
-      {filtrados.length > 0 ? (
-        <TableShell>
-          <thead>
-            <tr>
-              <Th>Data</Th>
-              <Th>Descrição</Th>
-              <Th>Tipo</Th>
-              <Th>Qtde</Th>
-              <Th>Valor</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line bg-white/70">
-            {filtrados.map((despesa) => (
-              <tr key={despesa.id}>
-                <Td>{formatDate(despesa.dataDespesa)}</Td>
-                <Td className="font-medium">{despesa.descricao}</Td>
-                <Td>
-                  <Badge tone="warn">{tipoDespesaLabel[despesa.tipo]}</Badge>
-                </Td>
-                <Td>
-                  {despesa.quantidade
-                    ? `${despesa.quantidade} ${despesa.unidadeMedida?.toLowerCase() ?? ''}`
-                    : '—'}
-                </Td>
-                <Td>{formatCurrency(despesa.valor)}</Td>
+      {lista.length > 0 ? (
+        <>
+          <TableShell>
+            <thead>
+              <tr>
+                <Th>Data</Th>
+                <Th>Descrição</Th>
+                <Th>Tipo</Th>
+                <Th>Qtde</Th>
+                <Th>Valor</Th>
+                <Th>Ações</Th>
               </tr>
-            ))}
-          </tbody>
-        </TableShell>
+            </thead>
+            <tbody className="divide-y divide-line bg-white/70">
+              {lista.map((despesa) => (
+                <tr key={despesa.id}>
+                  <Td>{formatDate(despesa.dataDespesa)}</Td>
+                  <Td className="font-medium">{despesa.descricao}</Td>
+                  <Td>
+                    <Badge tone="warn">{tipoDespesaLabel[despesa.tipo]}</Badge>
+                  </Td>
+                  <Td>
+                    {despesa.quantidade
+                      ? `${despesa.quantidade} ${despesa.unidadeMedida?.toLowerCase() ?? ''}`
+                      : '—'}
+                  </Td>
+                  <Td>{formatCurrency(despesa.valor)}</Td>
+                  <Td>
+                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(despesa)}>
+                      <Pencil className="size-4" />
+                      Editar
+                    </Button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+          {despesas.data ? (
+            <Paginacao meta={despesas.data} onPaginaChange={setPagina} onTamanhoChange={setTamanho} />
+          ) : null}
+        </>
       ) : null}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Novo gasto" description="Compras de insumo atualizam o estoque automaticamente." wide>
+      <Modal
+        open={open}
+        onClose={fecharModal}
+        title={editando ? 'Editar gasto' : 'Novo gasto'}
+        description="Compras de insumo atualizam o estoque automaticamente."
+        wide
+      >
         <form className="grid gap-3" onSubmit={onSubmit}>
           <Field label="Descrição">
             <Input
@@ -172,6 +254,7 @@ export function GastosPage() {
               <Input
                 type="date"
                 required
+                min={minDataOperacao()}
                 value={form.dataDespesa}
                 onChange={(e) => setForm((a) => ({ ...a, dataDespesa: e.target.value }))}
               />
@@ -267,11 +350,11 @@ export function GastosPage() {
           </Field>
 
           <div className="mt-2 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" variant="secondary" onClick={fecharModal}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={registrar.isPending}>
-              {registrar.isPending ? 'Salvando…' : 'Salvar gasto'}
+            <Button type="submit" disabled={salvando}>
+              {salvando ? 'Salvando…' : editando ? 'Salvar alterações' : 'Salvar gasto'}
             </Button>
           </div>
         </form>

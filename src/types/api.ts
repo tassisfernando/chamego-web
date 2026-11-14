@@ -15,6 +15,34 @@ export type StatusPedido = 'RASCUNHO' | 'CONFIRMADO' | 'CANCELADO'
 export type NaturezaPedido = 'VENDA' | 'DOACAO' | 'PARCERIA' | 'CONTRIBUICAO'
 export type TipoDespesa = 'INSUMO' | 'FERRAMENTA' | 'OPERACIONAL' | 'MARKETING'
 
+export interface Pagina<T> {
+  conteudo: T[]
+  pagina: number
+  tamanho: number
+  totalElementos: number
+  totalPaginas: number
+}
+
+export interface ParametrosPaginacao {
+  page?: number
+  size?: number
+  sort?: string
+  busca?: string
+}
+
+export interface LoginPayload {
+  usuario: string
+  senha: string
+}
+
+export interface LoginResposta {
+  token: string
+  tipo: string
+  expiraEm: string
+  usuarioId: string
+  login: string
+}
+
 export interface Cliente {
   id: string
   nome: string
@@ -24,6 +52,7 @@ export interface Cliente {
   dataCadastro: string
   dataNascimento?: string | null
   statusCupom: StatusCupom
+  ativo: boolean
 }
 
 export interface CadastrarClientePayload {
@@ -191,6 +220,61 @@ export interface ResultadoFinanceiro {
 }
 
 export interface Periodo {
-  inicio: string
-  fim: string
+  inicio?: string
+  fim?: string
 }
+
+export interface AniversarianteResumo {
+  id: string
+  nome: string
+  telefone?: string | null
+  dataNascimento: string
+  diasAteAniversario: number
+  hoje: boolean
+}
+
+export interface PainelAniversariantes {
+  proximos: AniversarianteResumo[]
+  ultimos: AniversarianteResumo[]
+}
+
+export interface AtualizarProdutoPayload {
+  nome: string
+  descricao?: string
+  categoria?: CategoriaProduto
+  pesoGramas?: number
+  precoVenda?: number
+  custoPadrao?: number
+  estoqueAtual?: number
+}
+
+export interface AtualizarInsumoPayload {
+  nome: string
+  categoria: CategoriaInsumo
+  marca?: string
+  unidadeMedida?: UnidadeMedida
+  estoqueAtual?: number
+  custoMedio?: number
+}
+
+export interface AtualizarPedidoPayload {
+  clienteId: string
+  dataPedido?: string
+  natureza?: NaturezaPedido
+  status?: StatusPedido
+  observacao?: string
+  itens: Array<{
+    produtoId: string
+    quantidade: number
+    precoUnitario: number
+  }>
+}
+
+export interface AtualizarProducaoPayload {
+  produtoId: string
+  dataProducao?: string
+  quantidadeProduzida: number
+  observacao?: string
+}
+
+export type AtualizarDespesaPayload = RegistrarDespesaPayload

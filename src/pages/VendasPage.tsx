@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { clientesApi, pedidosApi, produtosApi } from '@/api/services'
+import { Paginacao } from '@/components/Paginacao'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
 import {
   Badge,
@@ -13,17 +14,18 @@ import {
   LoadingBlock,
   Modal,
   PageHeader,
-  SearchInput,
   Select,
   TableShell,
   Td,
   Textarea,
   Th,
 } from '@/components/ui'
+import { usePaginacao } from '@/hooks/usePaginacao'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { naturezaPedidoLabel, statusPedidoLabel } from '@/lib/labels'
+import { minDataOperacao } from '@/lib/periodo'
 import { formatCurrency, formatDate, parseApiError, todayIso } from '@/lib/utils'
-import type { NaturezaPedido } from '@/types/api'
+import type { AtualizarPedidoPayload, NaturezaPedido, Pedido, StatusPedido } from '@/types/api'
 
 type ItemForm = {
   produtoId: string
@@ -35,20 +37,23 @@ const emptyItem = (): ItemForm => ({ produtoId: '', quantidade: '1', precoUnitar
 
 export function VendasPage() {
   const queryClient = useQueryClient()
-  const { ano, mes, periodo, setPeriodo } = usePeriodo()
-  const [busca, setBusca] = useState('')
+  const { modo, ano, mes, periodo, setModo, setAno, setMes } = usePeriodo()
+  const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
+  const [editando, setEditando] = useState<Pedido | null>(null)
   const [clienteId, setClienteId] = useState('')
   const [dataPedido, setDataPedido] = useState(todayIso())
   const [natureza, setNatureza] = useState<NaturezaPedido>('VENDA')
+  const [status, setStatus] = useState<StatusPedido>('CONFIRMADO')
   const [observacao, setObservacao] = useState('')
   const [itens, setItens] = useState<ItemForm[]>([emptyItem()])
 
-  const clientes = useQuery({ queryKey: ['clientes'], queryFn: clientesApi.listar })
-  const produtos = useQuery({ queryKey: ['produtos'], queryFn: produtosApi.listar })
+  const clientes = useQuery({ queryKey: ['clientes-opcoes'], queryFn: clientesApi.opcoes })
+  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: produtosApi.opcoes })
   const pedidos = useQuery({
-    queryKey: ['pedidos', periodo],
-    queryFn: () => pedidosApi.listar(periodo),
+    queryKey: ['pedidos', periodo, pagina, tamanho],
+    queryFn: () =>
+      pedidosApi.listar(periodo, { page: pagina, size: tamanho, sort: 'dataPedido,desc' }),
   })
 
   const clienteMap = useMemo(
@@ -66,17 +71,40 @@ export function VendasPage() {
     return acc + qtd * preco
   }, 0)
 
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    return (pedidos.data ?? []).filter((pedido) => {
-      if (!termo) return true
-      const nomeCliente = clienteMap.get(pedido.clienteId) ?? ''
-      return (
-        nomeCliente.toLowerCase().includes(termo) ||
-        naturezaPedidoLabel[pedido.natureza].toLowerCase().includes(termo)
-      )
-    })
-  }, [busca, clienteMap, pedidos.data])
+  const lista = pedidos.data?.conteudo ?? []
+
+  function fecharModal() {
+    setOpen(false)
+    setEditando(null)
+    setClienteId('')
+    setDataPedido(todayIso())
+    setNatureza('VENDA')
+    setStatus('CONFIRMADO')
+    setObservacao('')
+    setItens([emptyItem()])
+  }
+
+  function abrirNovo() {
+    fecharModal()
+    setOpen(true)
+  }
+
+  function abrirEdicao(pedido: Pedido) {
+    setEditando(pedido)
+    setClienteId(pedido.clienteId)
+    setDataPedido(pedido.dataPedido)
+    setNatureza(pedido.natureza)
+    setStatus(pedido.status === 'CANCELADO' ? 'CANCELADO' : 'CONFIRMADO')
+    setObservacao(pedido.observacao ?? '')
+    setItens(
+      pedido.itens.map((item) => ({
+        produtoId: item.produtoId,
+        quantidade: String(item.quantidade),
+        precoUnitario: String(item.precoUnitario),
+      })),
+    )
+    setOpen(true)
+  }
 
   const registrar = useMutation({
     mutationFn: pedidosApi.registrar,
@@ -85,14 +113,24 @@ export function VendasPage() {
       queryClient.invalidateQueries({ queryKey: ['pedidos'] })
       queryClient.invalidateQueries({ queryKey: ['financeiro'] })
       queryClient.invalidateQueries({ queryKey: ['produtos'] })
-      setOpen(false)
-      setClienteId('')
-      setDataPedido(todayIso())
-      setNatureza('VENDA')
-      setObservacao('')
-      setItens([emptyItem()])
+      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível registrar a venda.')),
+  })
+
+  const atualizar = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: AtualizarPedidoPayload }) =>
+      pedidosApi.atualizar(id, payload),
+    onSuccess: () => {
+      toast.success('Venda atualizada com sucesso.')
+      queryClient.invalidateQueries({ queryKey: ['pedidos'] })
+      queryClient.invalidateQueries({ queryKey: ['financeiro'] })
+      queryClient.invalidateQueries({ queryKey: ['produtos'] })
+      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      fecharModal()
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar a venda.')),
   })
 
   function atualizarItem(index: number, patch: Partial<ItemForm>) {
@@ -100,7 +138,7 @@ export function VendasPage() {
       atual.map((item, i) => {
         if (i !== index) return item
         const next = { ...item, ...patch }
-        if (patch.produtoId) {
+        if (patch.produtoId && !editando) {
           const produto = produtoMap.get(patch.produtoId)
           if (produto && !item.precoUnitario) {
             next.precoUnitario = String(produto.precoVenda)
@@ -130,24 +168,52 @@ export function VendasPage() {
       return
     }
 
-    registrar.mutate({
+    const payload = {
       clienteId,
       dataPedido,
       natureza,
       observacao: observacao.trim() || undefined,
       itens: itensValidos,
-    })
+    }
+
+    if (editando) {
+      atualizar.mutate({
+        id: editando.id,
+        payload: { ...payload, status },
+      })
+      return
+    }
+
+    registrar.mutate(payload)
   }
+
+  const salvando = registrar.isPending || atualizar.isPending
 
   return (
     <div>
       <PageHeader
         title="Vendas"
-        description="Registre pedidos com cliente, itens e total automático — como a coluna de vendas da planilha."
+        description="Registre pedidos com cliente, itens e total automático."
         actions={
           <>
-            <PeriodoFiltro ano={ano} mes={mes} onChange={setPeriodo} />
-            <Button type="button" onClick={() => setOpen(true)}>
+            <PeriodoFiltro
+              modo={modo}
+              ano={ano}
+              mes={mes}
+              onModoChange={(m) => {
+                setModo(m)
+                setPagina(0)
+              }}
+              onAnoChange={(a) => {
+                setAno(a)
+                setPagina(0)
+              }}
+              onMesChange={(m) => {
+                setMes(m)
+                setPagina(0)
+              }}
+            />
+            <Button type="button" onClick={abrirNovo}>
               <Plus className="size-4" />
               Nova venda
             </Button>
@@ -155,64 +221,68 @@ export function VendasPage() {
         }
       />
 
-      <div className="mb-4 max-w-md">
-        <SearchInput
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar por cliente ou tipo…"
-        />
-      </div>
-
       {pedidos.isLoading ? <LoadingBlock /> : null}
-      {!pedidos.isLoading && filtrados.length === 0 ? (
-        <EmptyState title="Nenhuma venda neste período" description="Registre a primeira venda do mês." />
+      {!pedidos.isLoading && lista.length === 0 ? (
+        <EmptyState title="Nenhuma venda neste período" description="Registre a primeira venda do período." />
       ) : null}
 
-      {filtrados.length > 0 ? (
-        <TableShell>
-          <thead>
-            <tr>
-              <Th>Data</Th>
-              <Th>Cliente</Th>
-              <Th>Tipo</Th>
-              <Th>Status</Th>
-              <Th>Itens</Th>
-              <Th>Total</Th>
-              <Th>Lucro</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line bg-white/70">
-            {filtrados.map((pedido) => (
-              <tr key={pedido.id}>
-                <Td>{formatDate(pedido.dataPedido)}</Td>
-                <Td className="font-medium">{clienteMap.get(pedido.clienteId) ?? 'Cliente'}</Td>
-                <Td>{naturezaPedidoLabel[pedido.natureza]}</Td>
-                <Td>
-                  <Badge tone={pedido.status === 'CONFIRMADO' ? 'ok' : 'neutral'}>
-                    {statusPedidoLabel[pedido.status]}
-                  </Badge>
-                </Td>
-                <Td>
-                  {pedido.itens
-                    .map((item) => {
-                      const produto = produtoMap.get(item.produtoId)
-                      return `${produto?.nome ?? 'Produto'} × ${item.quantidade}`
-                    })
-                    .join(', ')}
-                </Td>
-                <Td>{formatCurrency(pedido.valorTotal)}</Td>
-                <Td>{formatCurrency(pedido.lucroBruto)}</Td>
+      {lista.length > 0 ? (
+        <>
+          <TableShell>
+            <thead>
+              <tr>
+                <Th>Data</Th>
+                <Th>Cliente</Th>
+                <Th>Tipo</Th>
+                <Th>Status</Th>
+                <Th>Itens</Th>
+                <Th>Total</Th>
+                <Th>Lucro</Th>
+                <Th>Ações</Th>
               </tr>
-            ))}
-          </tbody>
-        </TableShell>
+            </thead>
+            <tbody className="divide-y divide-line bg-white/70">
+              {lista.map((pedido) => (
+                <tr key={pedido.id}>
+                  <Td>{formatDate(pedido.dataPedido)}</Td>
+                  <Td className="font-medium">{clienteMap.get(pedido.clienteId) ?? 'Cliente'}</Td>
+                  <Td>{naturezaPedidoLabel[pedido.natureza]}</Td>
+                  <Td>
+                    <Badge tone={pedido.status === 'CONFIRMADO' ? 'ok' : 'neutral'}>
+                      {statusPedidoLabel[pedido.status]}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    {pedido.itens
+                      .map((item) => {
+                        const produto = produtoMap.get(item.produtoId)
+                        return `${produto?.nome ?? 'Produto'} × ${item.quantidade}`
+                      })
+                      .join(', ')}
+                  </Td>
+                  <Td>{formatCurrency(pedido.valorTotal)}</Td>
+                  <Td>{formatCurrency(pedido.lucroBruto)}</Td>
+                  <Td>
+                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(pedido)}>
+                      <Pencil className="size-4" />
+                      Editar
+                    </Button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+          {pedidos.data ? (
+            <Paginacao meta={pedidos.data} onPaginaChange={setPagina} onTamanhoChange={setTamanho} />
+          ) : null}
+        </>
       ) : null}
 
       <Modal
         open={open}
         wide
-        onClose={() => setOpen(false)}
-        title="Nova venda"
+        onClose={fecharModal}
+        title={editando ? 'Editar venda' : 'Nova venda'}
         description="Escolha a cliente e os produtos. O subtotal atualiza sozinho."
       >
         <form className="grid gap-4" onSubmit={onSubmit}>
@@ -228,11 +298,17 @@ export function VendasPage() {
               </Select>
             </Field>
             <Field label="Data">
-              <Input type="date" required value={dataPedido} onChange={(e) => setDataPedido(e.target.value)} />
+              <Input
+                type="date"
+                required
+                min={minDataOperacao()}
+                value={dataPedido}
+                onChange={(e) => setDataPedido(e.target.value)}
+              />
             </Field>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className={`grid gap-3 ${editando ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
             <Field label="Tipo">
               <Select value={natureza} onChange={(e) => setNatureza(e.target.value as NaturezaPedido)}>
                 {Object.entries(naturezaPedidoLabel).map(([value, label]) => (
@@ -242,7 +318,15 @@ export function VendasPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Observação">
+            {editando ? (
+              <Field label="Status">
+                <Select value={status} onChange={(e) => setStatus(e.target.value as StatusPedido)}>
+                  <option value="CONFIRMADO">{statusPedidoLabel.CONFIRMADO}</option>
+                  <option value="CANCELADO">{statusPedidoLabel.CANCELADO}</option>
+                </Select>
+              </Field>
+            ) : null}
+            <Field label="Observação" className={editando ? undefined : 'md:col-span-1'}>
               <Textarea
                 value={observacao}
                 onChange={(e) => setObservacao(e.target.value)}
@@ -261,7 +345,10 @@ export function VendasPage() {
             </div>
 
             {itens.map((item, index) => (
-              <div key={index} className="grid gap-2 rounded-xl border border-line bg-white/70 p-3 md:grid-cols-[1.4fr_0.6fr_0.8fr_auto]">
+              <div
+                key={index}
+                className="grid gap-2 rounded-xl border border-line bg-white/70 p-3 md:grid-cols-[1.4fr_0.6fr_0.8fr_auto]"
+              >
                 <Field label="Produto">
                   <Select
                     required
@@ -315,11 +402,17 @@ export function VendasPage() {
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+            <Button type="button" variant="secondary" onClick={fecharModal}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={registrar.isPending}>
-              {registrar.isPending ? 'Registrando…' : 'Registrar venda'}
+            <Button type="submit" disabled={salvando}>
+              {salvando
+                ? editando
+                  ? 'Salvando…'
+                  : 'Registrando…'
+                : editando
+                  ? 'Salvar alterações'
+                  : 'Registrar venda'}
             </Button>
           </div>
         </form>

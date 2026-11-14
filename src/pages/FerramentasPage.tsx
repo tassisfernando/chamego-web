@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { ferramentasApi } from '@/api/services'
+import { Paginacao } from '@/components/Paginacao'
 import {
   Button,
   EmptyState,
@@ -11,14 +12,15 @@ import {
   LoadingBlock,
   Modal,
   PageHeader,
-  SearchInput,
   Select,
   TableShell,
   Td,
   Textarea,
   Th,
 } from '@/components/ui'
+import { usePaginacao } from '@/hooks/usePaginacao'
 import { unidadeLabel } from '@/lib/labels'
+import { minDataOperacao } from '@/lib/periodo'
 import { formatCurrency, formatDate, parseApiError, todayIso } from '@/lib/utils'
 import type { UnidadeMedida } from '@/types/api'
 
@@ -33,48 +35,46 @@ const emptyForm = {
 
 export function FerramentasPage() {
   const queryClient = useQueryClient()
-  const [busca, setBusca] = useState('')
+  const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  const ferramentas = useQuery({ queryKey: ['ferramentas'], queryFn: ferramentasApi.listar })
+  const ferramentas = useQuery({
+    queryKey: ['ferramentas', pagina, tamanho],
+    queryFn: () => ferramentasApi.listar({ page: pagina, size: tamanho, sort: 'nome' }),
+  })
 
   const cadastrar = useMutation({
     mutationFn: ferramentasApi.cadastrar,
     onSuccess: () => {
       toast.success('Ferramenta cadastrada com sucesso.')
       queryClient.invalidateQueries({ queryKey: ['ferramentas'] })
+      queryClient.invalidateQueries({ queryKey: ['ferramentas-opcoes'] })
       setForm({ ...emptyForm, dataCompra: todayIso() })
       setOpen(false)
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível cadastrar a ferramenta.')),
   })
 
-  const filtradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase()
-    return (ferramentas.data ?? []).filter((item) => {
-      if (!termo) return true
-      return item.nome.toLowerCase().includes(termo)
-    })
-  }, [busca, ferramentas.data])
-
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     cadastrar.mutate({
       nome: form.nome.trim(),
-      quantidade: Number(form.quantidade) || 1,
+      quantidade: form.quantidade ? Number(form.quantidade) : undefined,
       unidadeMedida: form.unidadeMedida,
-      valorAquisicao: form.valorAquisicao ? Number(form.valorAquisicao) : 0,
+      valorAquisicao: form.valorAquisicao ? Number(form.valorAquisicao) : undefined,
       dataCompra: form.dataCompra || undefined,
       observacao: form.observacao.trim() || undefined,
     })
   }
 
+  const lista = ferramentas.data?.conteudo ?? []
+
   return (
     <div>
       <PageHeader
         title="Ferramentas"
-        description="Patrimônio da produção: balanças, moldes, termômetros e utensílios."
+        description="Equipamentos e utensílios da produção artesanal."
         actions={
           <Button type="button" onClick={() => setOpen(true)}>
             <Plus className="size-4" />
@@ -83,53 +83,62 @@ export function FerramentasPage() {
         }
       />
 
-      <div className="mb-4 max-w-md">
-        <SearchInput value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar ferramenta…" />
-      </div>
-
       {ferramentas.isLoading ? <LoadingBlock /> : null}
-      {!ferramentas.isLoading && filtradas.length === 0 ? (
-        <EmptyState title="Nenhuma ferramenta cadastrada" description="Cadastre os utensílios usados na fabricação." />
+      {!ferramentas.isLoading && lista.length === 0 ? (
+        <EmptyState title="Nenhuma ferramenta cadastrada" description="Cadastre derretedeiras, balanças e moldes." />
       ) : null}
 
-      {filtradas.length > 0 ? (
-        <TableShell>
-          <thead>
-            <tr>
-              <Th>Item</Th>
-              <Th>Qtde</Th>
-              <Th>Valor</Th>
-              <Th>Compra</Th>
-              <Th>Obs.</Th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line bg-white/70">
-            {filtradas.map((item) => (
-              <tr key={item.id}>
-                <Td className="font-medium">{item.nome}</Td>
-                <Td>
-                  {item.quantidade} {item.unidadeMedida.toLowerCase()}
-                </Td>
-                <Td>{formatCurrency(item.valorAquisicao)}</Td>
-                <Td>{formatDate(item.dataCompra)}</Td>
-                <Td>{item.observacao || '—'}</Td>
+      {lista.length > 0 ? (
+        <>
+          <TableShell>
+            <thead>
+              <tr>
+                <Th>Nome</Th>
+                <Th>Qtde</Th>
+                <Th>Valor</Th>
+                <Th>Compra</Th>
+                <Th>Observação</Th>
               </tr>
-            ))}
-          </tbody>
-        </TableShell>
+            </thead>
+            <tbody className="divide-y divide-line bg-white/70">
+              {lista.map((ferramenta) => (
+                <tr key={ferramenta.id}>
+                  <Td className="font-medium">{ferramenta.nome}</Td>
+                  <Td>
+                    {ferramenta.quantidade} {unidadeLabel[ferramenta.unidadeMedida]}
+                  </Td>
+                  <Td>{formatCurrency(ferramenta.valorAquisicao)}</Td>
+                  <Td>{formatDate(ferramenta.dataCompra)}</Td>
+                  <Td>{ferramenta.observacao || '—'}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+          {ferramentas.data ? (
+            <Paginacao
+              meta={ferramentas.data}
+              onPaginaChange={setPagina}
+              onTamanhoChange={setTamanho}
+            />
+          ) : null}
+        </>
       ) : null}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Nova ferramenta" description="Cadastre um item do patrimônio.">
+      <Modal open={open} onClose={() => setOpen(false)} title="Nova ferramenta">
         <form className="grid gap-3" onSubmit={onSubmit}>
           <Field label="Nome">
-            <Input required value={form.nome} onChange={(e) => setForm((a) => ({ ...a, nome: e.target.value }))} />
+            <Input
+              required
+              value={form.nome}
+              onChange={(e) => setForm((a) => ({ ...a, nome: e.target.value }))}
+            />
           </Field>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Quantidade">
               <Input
                 type="number"
                 min={0}
-                step="0.001"
+                step="0.01"
                 value={form.quantidade}
                 onChange={(e) => setForm((a) => ({ ...a, quantidade: e.target.value }))}
               />
@@ -146,7 +155,9 @@ export function FerramentasPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Valor (R$)">
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Valor de aquisição">
               <Input
                 type="number"
                 min={0}
@@ -155,14 +166,15 @@ export function FerramentasPage() {
                 onChange={(e) => setForm((a) => ({ ...a, valorAquisicao: e.target.value }))}
               />
             </Field>
+            <Field label="Data da compra">
+              <Input
+                type="date"
+                min={minDataOperacao()}
+                value={form.dataCompra}
+                onChange={(e) => setForm((a) => ({ ...a, dataCompra: e.target.value }))}
+              />
+            </Field>
           </div>
-          <Field label="Data da compra">
-            <Input
-              type="date"
-              value={form.dataCompra}
-              onChange={(e) => setForm((a) => ({ ...a, dataCompra: e.target.value }))}
-            />
-          </Field>
           <Field label="Observação">
             <Textarea
               value={form.observacao}

@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Boxes,
   CircleDollarSign,
@@ -6,12 +6,14 @@ import {
   Flame,
   FlaskConical,
   LayoutDashboard,
+  LogOut,
   Menu,
   Users,
   Wrench,
   X,
 } from 'lucide-react'
 import { useState, type ComponentType } from 'react'
+import { limparSessao, obterLogin } from '@/lib/auth'
 import { cn, formatDateTimePt } from '@/lib/utils'
 
 type NavItem = {
@@ -33,6 +35,13 @@ const navItems: NavItem[] = [
 
 export function AppLayout() {
   const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+  const login = obterLogin()
+
+  function sair() {
+    limparSessao()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_1fr]">
@@ -71,10 +80,20 @@ export function AppLayout() {
             })}
           </nav>
 
-          <div className="mt-6 rounded-2xl bg-foam/10 px-3 py-3 text-xs text-foam/80">
-            Hoje é {formatDateTimePt()}.
-            <br />
-            Tudo em português, simples e claro.
+          <div className="mt-6 space-y-3">
+            <div className="rounded-2xl bg-foam/10 px-3 py-3 text-xs text-foam/80">
+              Hoje é {formatDateTimePt()}.
+              <br />
+              {login ? `Conectado como ${login}.` : 'Sessão ativa por 24 horas.'}
+            </div>
+            <button
+              type="button"
+              onClick={sair}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-foam/10 px-3 py-2.5 text-sm font-medium text-foam/90 transition hover:bg-foam/20"
+            >
+              <LogOut className="size-4" />
+              Sair
+            </button>
           </div>
         </div>
       </aside>

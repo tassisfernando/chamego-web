@@ -1,20 +1,43 @@
 import { useMemo, useState } from 'react'
-import { monthBounds } from '@/lib/utils'
+import {
+  estadoPeriodoPadrao,
+  normalizarMes,
+  resolverPeriodo,
+  type ModoPeriodo,
+  type PeriodoFiltroEstado,
+} from '@/lib/periodo'
 
 export function usePeriodo() {
-  const agora = new Date()
-  const [ano, setAno] = useState(agora.getFullYear())
-  const [mes, setMes] = useState(agora.getMonth() + 1)
+  const [estado, setEstado] = useState<PeriodoFiltroEstado>(estadoPeriodoPadrao)
 
-  const periodo = useMemo(() => monthBounds(ano, mes), [ano, mes])
+  const resolvido = useMemo(() => resolverPeriodo(estado), [estado])
 
   return {
-    ano,
-    mes,
-    periodo,
-    setPeriodo: (novoAno: number, novoMes: number) => {
-      setAno(novoAno)
-      setMes(novoMes)
+    modo: estado.modo,
+    ano: estado.ano,
+    mes: estado.mes,
+    periodo: {
+      inicio: resolvido.inicio,
+      fim: resolvido.fim,
     },
+    rotuloPeriodo: resolvido.rotulo,
+    setModo: (modo: ModoPeriodo) => setEstado((atual) => ({ ...atual, modo })),
+    setAno: (ano: number) =>
+      setEstado((atual) => ({
+        ...atual,
+        ano,
+        mes: normalizarMes(ano, atual.mes),
+      })),
+    setMes: (mes: number) =>
+      setEstado((atual) => ({
+        ...atual,
+        mes: normalizarMes(atual.ano, mes),
+      })),
+    setPeriodo: (ano: number, mes: number) =>
+      setEstado((atual) => ({
+        ...atual,
+        ano,
+        mes: normalizarMes(ano, mes),
+      })),
   }
 }

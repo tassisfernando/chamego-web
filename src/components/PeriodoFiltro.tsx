@@ -1,37 +1,58 @@
 import { MESES } from '@/lib/labels'
+import { anosDisponiveis, mesesDisponiveis, type ModoPeriodo } from '@/lib/periodo'
 import { Field, Select } from '@/components/ui'
 
 export function PeriodoFiltro({
+  modo,
   ano,
   mes,
-  onChange,
+  onModoChange,
+  onAnoChange,
+  onMesChange,
 }: {
+  modo: ModoPeriodo
   ano: number
   mes: number
-  onChange: (ano: number, mes: number) => void
+  onModoChange: (modo: ModoPeriodo) => void
+  onAnoChange: (ano: number) => void
+  onMesChange: (mes: number) => void
 }) {
-  const anos = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i)
+  const anos = anosDisponiveis()
+  const meses = mesesDisponiveis(ano)
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Field label="Mês" className="min-w-40">
-        <Select value={mes} onChange={(e) => onChange(ano, Number(e.target.value))}>
-          {MESES.map((nome, index) => (
-            <option key={nome} value={index + 1}>
-              {nome}
-            </option>
-          ))}
+      <Field label="Período" className="min-w-44">
+        <Select value={modo} onChange={(e) => onModoChange(e.target.value as ModoPeriodo)}>
+          <option value="mensal">Mensal</option>
+          <option value="anual">Todo o ano</option>
+          <option value="todo">Todo o período</option>
         </Select>
       </Field>
-      <Field label="Ano" className="min-w-28">
-        <Select value={ano} onChange={(e) => onChange(Number(e.target.value), mes)}>
-          {anos.map((valor) => (
-            <option key={valor} value={valor}>
-              {valor}
-            </option>
-          ))}
-        </Select>
-      </Field>
+
+      {modo !== 'todo' ? (
+        <Field label="Ano" className="min-w-28">
+          <Select value={ano} onChange={(e) => onAnoChange(Number(e.target.value))}>
+            {anos.map((valor) => (
+              <option key={valor} value={valor}>
+                {valor}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+
+      {modo === 'mensal' ? (
+        <Field label="Mês" className="min-w-40">
+          <Select value={mes} onChange={(e) => onMesChange(Number(e.target.value))}>
+            {meses.map((valor) => (
+              <option key={valor} value={valor}>
+                {MESES[valor - 1]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
     </div>
   )
 }
