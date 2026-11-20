@@ -159,6 +159,7 @@ export const producoesApi = {
 }
 
 export type NotificacaoAniversarioConfig = {
+  habilitada: boolean
   canal: string
   ownerEmail: string
   ownerWhatsapp: string

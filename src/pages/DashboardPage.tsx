@@ -257,12 +257,18 @@ export function DashboardPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {notificacaoConfig.data ? (
-                <Badge tone="neutral">Canal: {notificacaoConfig.data.canal}</Badge>
+                <Badge tone={notificacaoConfig.data.habilitada ? 'neutral' : 'warn'}>
+                  {notificacaoConfig.data.habilitada
+                    ? `Canal: ${notificacaoConfig.data.canal}`
+                    : 'Lembrete diário desligado'}
+                </Badge>
               ) : null}
               <Button
                 type="button"
                 variant="secondary"
-                disabled={dispararResumo.isPending}
+                disabled={
+                  dispararResumo.isPending || notificacaoConfig.data?.habilitada === false
+                }
                 onClick={() => dispararResumo.mutate()}
                 title="Envia o resumo diário (e-mail, WhatsApp ou log conforme configuração da API)"
               >
