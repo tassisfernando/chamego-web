@@ -2,15 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { produtosApi } from '@/api/services'
 import { Input } from '@/components/ui'
+import { normalizarTexto } from '@/lib/normalizarTexto'
 import { formatCurrency } from '@/lib/utils'
 import type { Produto } from '@/types/api'
-
-function normalizarTexto(texto: string) {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-}
 
 type Props = {
   value: string

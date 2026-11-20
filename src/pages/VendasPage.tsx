@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { clientesApi, pedidosApi, produtosApi } from '@/api/services'
 import { Paginacao } from '@/components/Paginacao'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
+import { ClienteCombobox } from '@/components/ClienteCombobox'
 import { ProductCombobox } from '@/components/ProductCombobox'
 import { QuickClienteCadastroModal } from '@/components/QuickClienteCadastroModal'
 import {
@@ -70,7 +71,10 @@ export function VendasPage() {
   const [descontoPercentualPedido, setDescontoPercentualPedido] = useState('')
   const [itens, setItens] = useState<ItemForm[]>([emptyItem()])
 
-  const clientes = useQuery({ queryKey: ['clientes-opcoes'], queryFn: clientesApi.opcoes })
+  const clientes = useQuery({
+    queryKey: ['clientes-opcoes'],
+    queryFn: () => clientesApi.opcoes(),
+  })
   const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
   const statusLista =
     filtroLista === 'TODOS' ? undefined : (filtroLista as StatusPedido)
@@ -116,15 +120,18 @@ export function VendasPage() {
   }
 
   function aoClienteRapidoCriado(cliente: Cliente) {
-    queryClient.setQueryData<Cliente[]>(['clientes-opcoes'], (listaAnterior) => {
+    const inserir = (listaAnterior?: Cliente[]) => {
       const lista = listaAnterior ?? []
       if (lista.some((item) => item.id === cliente.id)) {
         return lista
       }
       return [...lista, cliente].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-    })
+    }
+    queryClient.setQueryData<Cliente[]>(['clientes-opcoes'], inserir)
+    queryClient.setQueryData<Cliente[]>(['clientes-busca'], inserir)
     setClienteId(cliente.id)
     queryClient.invalidateQueries({ queryKey: ['clientes'] })
+    queryClient.invalidateQueries({ queryKey: ['clientes-busca'] })
     queryClient.invalidateQueries({ queryKey: ['aniversariantes-painel'] })
   }
 
@@ -410,19 +417,11 @@ export function VendasPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Cliente" className="md:col-span-2">
               <div className="flex flex-wrap items-stretch gap-2">
-                <Select
-                  required
-                  className="min-w-0 flex-1"
+                <ClienteCombobox
                   value={clienteId}
-                  onChange={(e) => setClienteId(e.target.value)}
-                >
-                  <option value="">Selecione…</option>
-                  {(clientes.data ?? []).map((cliente) => (
-                    <option key={cliente.id} value={cliente.id}>
-                      {cliente.nome}
-                    </option>
-                  ))}
-                </Select>
+                  nomeExibicao={clienteId ? clienteMap.get(clienteId) : undefined}
+                  onSelect={(cliente) => setClienteId(cliente?.id ?? '')}
+                />
                 <Button type="button" variant="secondary" onClick={() => setOpenNovoCliente(true)}>
                   <Plus className="size-4" />
                   Novo cliente

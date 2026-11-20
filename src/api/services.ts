@@ -54,7 +54,12 @@ export const authApi = {
 export const clientesApi = {
   listar: async (p?: ParametrosPaginacao) =>
     (await api.get<Pagina<Cliente>>('/api/clientes', { params: paramsPaginacao(p) })).data,
-  opcoes: async () => (await api.get<Cliente[]>('/api/clientes/opcoes')).data,
+  opcoes: async (search?: string) =>
+    (
+      await api.get<Cliente[]>('/api/clientes/opcoes', {
+        params: search?.trim() ? { search: search.trim() } : undefined,
+      })
+    ).data,
   aniversariantes: async () => (await api.get<Cliente[]>('/api/clientes/aniversariantes')).data,
   painelAniversariantes: async () =>
     (await api.get<PainelAniversariantes>('/api/clientes/aniversariantes/painel')).data,
