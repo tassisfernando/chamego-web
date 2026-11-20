@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Cake, MessageCircle } from 'lucide-react'
-import { clientesApi, financeiroApi, insumosApi, produtosApi } from '@/api/services'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Cake, MessageCircle, Send } from 'lucide-react'
+import { toast } from 'sonner'
+import { clientesApi, financeiroApi, insumosApi, notificacoesApi, produtosApi } from '@/api/services'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
 import {
   Badge,
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { abrirWhatsApp, sanitizarTelefoneBr } from '@/lib/whatsapp'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, parseApiError } from '@/lib/utils'
 import type { AniversarianteResumo } from '@/types/api'
 
 const ESTOQUE_BAIXO_PRODUTO = 5
@@ -96,6 +97,7 @@ function ListaAniversariantes({
 }
 
 export function DashboardPage() {
+  const queryClient = useQueryClient()
   const { modo, ano, mes, periodo, rotuloPeriodo, setModo, setAno, setMes } = usePeriodo()
 
   const financeiro = useQuery({
@@ -103,11 +105,30 @@ export function DashboardPage() {
     queryFn: () => financeiroApi.resultado(periodo),
   })
 
-  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: produtosApi.opcoes })
+  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
   const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
   const painel = useQuery({
     queryKey: ['aniversariantes-painel'],
     queryFn: clientesApi.painelAniversariantes,
+  })
+  const notificacaoConfig = useQuery({
+    queryKey: ['notificacao-aniversario-config'],
+    queryFn: notificacoesApi.configuracao,
+  })
+  const dispararResumo = useMutation({
+    mutationFn: notificacoesApi.dispararResumoDiario,
+    onSuccess: (resposta) => {
+      if (resposta.notificacaoEnviada) {
+        toast.success(
+          `Resumo enviado para ${resposta.aniversariantes} aniversariante(s) de hoje.`,
+        )
+      } else {
+        toast.message('Nenhum aniversariante hoje — nenhuma notificação foi enviada.')
+      }
+      queryClient.invalidateQueries({ queryKey: ['notificacao-aniversario-config'] })
+    },
+    onError: (error) =>
+      toast.error(parseApiError(error, 'Não foi possível disparar o lembrete de aniversários.')),
   })
 
   const produtosBaixos =
@@ -229,9 +250,26 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <Cake className="size-4 text-ember" />
-            <h2 className="font-display text-xl font-semibold">Aniversariantes</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Cake className="size-4 text-ember" />
+              <h2 className="font-display text-xl font-semibold">Aniversariantes</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {notificacaoConfig.data ? (
+                <Badge tone="neutral">Canal: {notificacaoConfig.data.canal}</Badge>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={dispararResumo.isPending}
+                onClick={() => dispararResumo.mutate()}
+                title="Envia o resumo diário (e-mail, WhatsApp ou log conforme configuração da API)"
+              >
+                <Send className="size-4" />
+                {dispararResumo.isPending ? 'Enviando…' : 'Testar lembrete diário'}
+              </Button>
+            </div>
           </div>
 
           {painel.isLoading ? (

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { produtosApi } from '@/api/services'
@@ -41,6 +41,7 @@ export function ProdutosPage() {
   const buscaDebounced = useDebouncedValue(busca, 300)
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Produto | null>(null)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Produto | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
@@ -106,6 +107,17 @@ export function ProdutosPage() {
       fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar o produto.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: produtosApi.excluir,
+    onSuccess: () => {
+      toast.success('Produto excluído.')
+      queryClient.invalidateQueries({ queryKey: ['produtos'] })
+      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir o produto.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -187,10 +199,16 @@ export function ProdutosPage() {
                   <Td>{formatCurrency(produto.custoPadrao)}</Td>
                   <Td>{produto.estoqueAtual} un</Td>
                   <Td>
-                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(produto)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" variant="ghost" onClick={() => abrirEdicao(produto)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmacaoExcluir(produto)}>
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -278,6 +296,30 @@ export function ProdutosPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir produto"
+        description="O produto será removido permanentemente. Pedidos históricos podem continuar referenciando-o."
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir <strong>{confirmacaoExcluir?.nome}</strong>?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )

@@ -35,6 +35,7 @@ function paramsPaginacao(p?: ParametrosPaginacao) {
     size: p?.size ?? 20,
     ...(p?.sort ? { sort: p.sort } : {}),
     ...(p?.busca?.trim() ? { busca: p.busca.trim() } : {}),
+    ...(p?.status ? { status: p.status } : {}),
   }
 }
 
@@ -69,11 +70,19 @@ export const clientesApi = {
 export const produtosApi = {
   listar: async (p?: ParametrosPaginacao) =>
     (await api.get<Pagina<Produto>>('/api/produtos', { params: paramsPaginacao(p) })).data,
-  opcoes: async () => (await api.get<Produto[]>('/api/produtos/opcoes')).data,
+  opcoes: async (search?: string) =>
+    (
+      await api.get<Produto[]>('/api/produtos/opcoes', {
+        params: search?.trim() ? { search: search.trim() } : undefined,
+      })
+    ).data,
   cadastrar: async (payload: CadastrarProdutoPayload) =>
     (await api.post<Produto>('/api/produtos', payload)).data,
   atualizar: async (id: string, payload: AtualizarProdutoPayload) =>
     (await api.put<Produto>(`/api/produtos/${id}`, payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/produtos/${id}`)
+  },
 }
 
 export const insumosApi = {
@@ -84,6 +93,9 @@ export const insumosApi = {
     (await api.post<Insumo>('/api/insumos', payload)).data,
   atualizar: async (id: string, payload: AtualizarInsumoPayload) =>
     (await api.put<Insumo>(`/api/insumos/${id}`, payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/insumos/${id}`)
+  },
 }
 
 export const ferramentasApi = {
@@ -92,6 +104,9 @@ export const ferramentasApi = {
   opcoes: async () => (await api.get<Ferramenta[]>('/api/ferramentas/opcoes')).data,
   cadastrar: async (payload: CadastrarFerramentaPayload) =>
     (await api.post<Ferramenta>('/api/ferramentas', payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/ferramentas/${id}`)
+  },
 }
 
 export const pedidosApi = {
@@ -105,6 +120,10 @@ export const pedidosApi = {
     (await api.post<PedidoCriado>('/api/pedidos', payload)).data,
   atualizar: async (id: string, payload: AtualizarPedidoPayload) =>
     (await api.put<Pedido>(`/api/pedidos/${id}`, payload)).data,
+  concretizar: async (id: string) => (await api.post<Pedido>(`/api/pedidos/${id}/concretizar`)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/pedidos/${id}`)
+  },
 }
 
 export const despesasApi = {
@@ -118,6 +137,9 @@ export const despesasApi = {
     (await api.post('/api/despesas', payload)).data,
   atualizar: async (id: string, payload: AtualizarDespesaPayload) =>
     (await api.put<Despesa>(`/api/despesas/${id}`, payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/despesas/${id}`)
+  },
 }
 
 export const producoesApi = {
@@ -131,6 +153,29 @@ export const producoesApi = {
     (await api.post('/api/producoes', payload)).data,
   atualizar: async (id: string, payload: AtualizarProducaoPayload) =>
     (await api.put<Producao>(`/api/producoes/${id}`, payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/producoes/${id}`)
+  },
+}
+
+export type NotificacaoAniversarioConfig = {
+  canal: string
+  ownerEmail: string
+  ownerWhatsapp: string
+  whatsappApiUrl: string
+}
+
+export type DisparoAniversarioResposta = {
+  dataReferencia: string
+  aniversariantes: number
+  notificacaoEnviada: boolean
+}
+
+export const notificacoesApi = {
+  configuracao: async () =>
+    (await api.get<NotificacaoAniversarioConfig>('/api/notifications/birthdays/config')).data,
+  dispararResumoDiario: async () =>
+    (await api.post<DisparoAniversarioResposta>('/api/notifications/birthdays/trigger')).data,
 }
 
 export const financeiroApi = {

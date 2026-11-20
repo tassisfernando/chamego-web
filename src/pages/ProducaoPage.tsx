@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { producoesApi, produtosApi } from '@/api/services'
@@ -38,9 +38,10 @@ export function ProducaoPage() {
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Producao | null>(null)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Producao | null>(null)
   const [form, setForm] = useState(emptyForm)
 
-  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: produtosApi.opcoes })
+  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
   const producoes = useQuery({
     queryKey: ['producoes', periodo, pagina, tamanho],
     queryFn: () =>
@@ -109,6 +110,20 @@ export function ProducaoPage() {
       fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar a produção.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: producoesApi.excluir,
+    onSuccess: () => {
+      toast.success('Produção excluída e estoque ajustado.')
+      queryClient.invalidateQueries({ queryKey: ['producoes'] })
+      queryClient.invalidateQueries({ queryKey: ['produtos'] })
+      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir a produção.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -189,10 +204,16 @@ export function ProducaoPage() {
                   <Td>{formatCurrency(lote.custoTotal)}</Td>
                   <Td>{lote.observacao || '—'}</Td>
                   <Td>
-                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(lote)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" variant="ghost" onClick={() => abrirEdicao(lote)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmacaoExcluir(lote)}>
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -263,6 +284,36 @@ export function ProducaoPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir produção"
+        description="O estoque de velas será reduzido e os materiais consumidos na ficha técnica serão devolvidos ao estoque."
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir o lote de{' '}
+          <strong>
+            {confirmacaoExcluir
+              ? `${produtoMap.get(confirmacaoExcluir.produtoId) ?? 'produto'} (${confirmacaoExcluir.quantidadeProduzida} un.)`
+              : ''}
+          </strong>
+          ?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )

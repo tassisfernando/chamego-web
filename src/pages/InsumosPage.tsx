@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { insumosApi } from '@/api/services'
@@ -41,6 +41,7 @@ export function InsumosPage() {
   const buscaDebounced = useDebouncedValue(busca, 300)
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Insumo | null>(null)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Insumo | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   useEffect(() => {
@@ -106,6 +107,17 @@ export function InsumosPage() {
       fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar o material.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: insumosApi.excluir,
+    onSuccess: () => {
+      toast.success('Material excluído.')
+      queryClient.invalidateQueries({ queryKey: ['insumos'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir o material.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -186,10 +198,16 @@ export function InsumosPage() {
                   </Td>
                   <Td>{formatCurrency(insumo.custoMedio)}</Td>
                   <Td>
-                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(insumo)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" variant="ghost" onClick={() => abrirEdicao(insumo)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmacaoExcluir(insumo)}>
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -275,6 +293,30 @@ export function InsumosPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir material"
+        description="O insumo será removido permanentemente do estoque."
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir <strong>{confirmacaoExcluir?.nome}</strong>?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )

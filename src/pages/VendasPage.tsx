@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { clientesApi, pedidosApi, produtosApi } from '@/api/services'
 import { Paginacao } from '@/components/Paginacao'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
+import { ProductCombobox } from '@/components/ProductCombobox'
+import { QuickClienteCadastroModal } from '@/components/QuickClienteCadastroModal'
 import {
   Badge,
   Button,
@@ -23,37 +25,65 @@ import {
 import { usePaginacao } from '@/hooks/usePaginacao'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { naturezaPedidoLabel, statusPedidoLabel } from '@/lib/labels'
+import { totaisPedido } from '@/lib/pedidoTotais'
 import { minDataOperacao } from '@/lib/periodo'
 import { formatCurrency, formatDate, parseApiError, todayIso } from '@/lib/utils'
-import type { AtualizarPedidoPayload, NaturezaPedido, Pedido, StatusPedido } from '@/types/api'
+import type { AtualizarPedidoPayload, Cliente, NaturezaPedido, Pedido, StatusPedido } from '@/types/api'
 
 type ItemForm = {
   produtoId: string
   quantidade: string
   precoUnitario: string
+  descontoPercentual: string
 }
 
-const emptyItem = (): ItemForm => ({ produtoId: '', quantidade: '1', precoUnitario: '' })
+type FiltroLista = 'TODOS' | 'ORCAMENTO' | 'CONFIRMADO'
+
+const emptyItem = (): ItemForm => ({
+  produtoId: '',
+  quantidade: '1',
+  precoUnitario: '',
+  descontoPercentual: '',
+})
+
+function statusBadgeTone(status: StatusPedido): 'ok' | 'warn' | 'neutral' | 'danger' {
+  if (status === 'CONFIRMADO') return 'ok'
+  if (status === 'ORCAMENTO') return 'warn'
+  if (status === 'CANCELADO') return 'danger'
+  return 'neutral'
+}
 
 export function VendasPage() {
   const queryClient = useQueryClient()
   const { modo, ano, mes, periodo, setModo, setAno, setMes } = usePeriodo()
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
+  const [openNovoCliente, setOpenNovoCliente] = useState(false)
   const [editando, setEditando] = useState<Pedido | null>(null)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Pedido | null>(null)
+  const [filtroLista, setFiltroLista] = useState<FiltroLista>('TODOS')
   const [clienteId, setClienteId] = useState('')
   const [dataPedido, setDataPedido] = useState(todayIso())
   const [natureza, setNatureza] = useState<NaturezaPedido>('VENDA')
   const [status, setStatus] = useState<StatusPedido>('CONFIRMADO')
   const [observacao, setObservacao] = useState('')
+  const [descontoPercentualPedido, setDescontoPercentualPedido] = useState('')
   const [itens, setItens] = useState<ItemForm[]>([emptyItem()])
 
   const clientes = useQuery({ queryKey: ['clientes-opcoes'], queryFn: clientesApi.opcoes })
-  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: produtosApi.opcoes })
+  const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
+  const statusLista =
+    filtroLista === 'TODOS' ? undefined : (filtroLista as StatusPedido)
+
   const pedidos = useQuery({
-    queryKey: ['pedidos', periodo, pagina, tamanho],
+    queryKey: ['pedidos', periodo, pagina, tamanho, filtroLista],
     queryFn: () =>
-      pedidosApi.listar(periodo, { page: pagina, size: tamanho, sort: 'dataPedido,desc' }),
+      pedidosApi.listar(periodo, {
+        page: pagina,
+        size: tamanho,
+        sort: 'dataPedido,desc',
+        status: statusLista,
+      }),
   })
 
   const clienteMap = useMemo(
@@ -65,13 +95,38 @@ export function VendasPage() {
     [produtos.data],
   )
 
-  const subtotal = itens.reduce((acc, item) => {
-    const qtd = Number(item.quantidade) || 0
-    const preco = Number(item.precoUnitario) || 0
-    return acc + qtd * preco
-  }, 0)
+  const totais = useMemo(() => {
+    const itensNumericos = itens
+      .filter((item) => item.produtoId && Number(item.quantidade) > 0)
+      .map((item) => ({
+        quantidade: Number(item.quantidade) || 0,
+        precoUnitario: Number(item.precoUnitario) || 0,
+        descontoPercentual: Number(item.descontoPercentual) || 0,
+      }))
+  return totaisPedido(itensNumericos, Number(descontoPercentualPedido) || 0)
+  }, [itens, descontoPercentualPedido])
 
   const lista = pedidos.data?.conteudo ?? []
+
+  function invalidarPedidos() {
+    queryClient.invalidateQueries({ queryKey: ['pedidos'] })
+    queryClient.invalidateQueries({ queryKey: ['financeiro'] })
+    queryClient.invalidateQueries({ queryKey: ['produtos'] })
+    queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+  }
+
+  function aoClienteRapidoCriado(cliente: Cliente) {
+    queryClient.setQueryData<Cliente[]>(['clientes-opcoes'], (listaAnterior) => {
+      const lista = listaAnterior ?? []
+      if (lista.some((item) => item.id === cliente.id)) {
+        return lista
+      }
+      return [...lista, cliente].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    })
+    setClienteId(cliente.id)
+    queryClient.invalidateQueries({ queryKey: ['clientes'] })
+    queryClient.invalidateQueries({ queryKey: ['aniversariantes-painel'] })
+  }
 
   function fecharModal() {
     setOpen(false)
@@ -81,6 +136,7 @@ export function VendasPage() {
     setNatureza('VENDA')
     setStatus('CONFIRMADO')
     setObservacao('')
+    setDescontoPercentualPedido('')
     setItens([emptyItem()])
   }
 
@@ -94,13 +150,18 @@ export function VendasPage() {
     setClienteId(pedido.clienteId)
     setDataPedido(pedido.dataPedido)
     setNatureza(pedido.natureza)
-    setStatus(pedido.status === 'CANCELADO' ? 'CANCELADO' : 'CONFIRMADO')
+    setStatus(pedido.status)
     setObservacao(pedido.observacao ?? '')
+    setDescontoPercentualPedido(
+      pedido.descontoPercentual != null ? String(pedido.descontoPercentual) : '',
+    )
     setItens(
       pedido.itens.map((item) => ({
         produtoId: item.produtoId,
         quantidade: String(item.quantidade),
         precoUnitario: String(item.precoUnitario),
+        descontoPercentual:
+          item.descontoPercentual != null ? String(item.descontoPercentual) : '',
       })),
     )
     setOpen(true)
@@ -109,82 +170,93 @@ export function VendasPage() {
   const registrar = useMutation({
     mutationFn: pedidosApi.registrar,
     onSuccess: (pedido) => {
-      toast.success(`Venda registrada · total ${formatCurrency(pedido.valorTotal)}`)
-      queryClient.invalidateQueries({ queryKey: ['pedidos'] })
-      queryClient.invalidateQueries({ queryKey: ['financeiro'] })
-      queryClient.invalidateQueries({ queryKey: ['produtos'] })
-      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      toast.success(`Pedido registrado · total ${formatCurrency(pedido.valorTotal)}`)
+      invalidarPedidos()
       fecharModal()
     },
-    onError: (error) => toast.error(parseApiError(error, 'Não foi possível registrar a venda.')),
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível registrar o pedido.')),
   })
 
   const atualizar = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: AtualizarPedidoPayload }) =>
       pedidosApi.atualizar(id, payload),
     onSuccess: () => {
-      toast.success('Venda atualizada com sucesso.')
-      queryClient.invalidateQueries({ queryKey: ['pedidos'] })
-      queryClient.invalidateQueries({ queryKey: ['financeiro'] })
-      queryClient.invalidateQueries({ queryKey: ['produtos'] })
-      queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      toast.success('Pedido atualizado com sucesso.')
+      invalidarPedidos()
       fecharModal()
     },
-    onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar a venda.')),
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar o pedido.')),
+  })
+
+  const concretizar = useMutation({
+    mutationFn: pedidosApi.concretizar,
+    onSuccess: (pedido) => {
+      toast.success(`Venda concretizada · total ${formatCurrency(pedido.valorTotal)}`)
+      invalidarPedidos()
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível concretizar a venda.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: pedidosApi.excluir,
+    onSuccess: () => {
+      toast.success('Pedido excluído.')
+      invalidarPedidos()
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir o pedido.')),
   })
 
   function atualizarItem(index: number, patch: Partial<ItemForm>) {
-    setItens((atual) =>
-      atual.map((item, i) => {
-        if (i !== index) return item
-        const next = { ...item, ...patch }
-        if (patch.produtoId && !editando) {
-          const produto = produtoMap.get(patch.produtoId)
-          if (produto && !item.precoUnitario) {
-            next.precoUnitario = String(produto.precoVenda)
-          }
-        }
-        return next
-      }),
-    )
+    setItens((atual) => atual.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
 
-  function onSubmit(event: FormEvent) {
-    event.preventDefault()
-    const itensValidos = itens
+  function montarItensValidos() {
+    return itens
       .filter((item) => item.produtoId && Number(item.quantidade) > 0)
       .map((item) => ({
         produtoId: item.produtoId,
         quantidade: Number(item.quantidade),
         precoUnitario: Number(item.precoUnitario) || 0,
+        descontoPercentual: Number(item.descontoPercentual) || undefined,
       }))
+  }
 
+  function validarFormulario() {
+    const itensValidos = montarItensValidos()
     if (!clienteId) {
-      toast.error('Escolha a cliente da venda.')
-      return
+      toast.error('Escolha a cliente do pedido.')
+      return null
     }
     if (itensValidos.length === 0) {
       toast.error('Adicione pelo menos um produto.')
-      return
+      return null
     }
-
-    const payload = {
+    const descontoPedido = Number(descontoPercentualPedido)
+    return {
       clienteId,
       dataPedido,
       natureza,
       observacao: observacao.trim() || undefined,
+      descontoPercentual: descontoPedido > 0 ? descontoPedido : undefined,
       itens: itensValidos,
     }
+  }
 
-    if (editando) {
-      atualizar.mutate({
-        id: editando.id,
-        payload: { ...payload, status },
-      })
-      return
-    }
+  function salvarNovo(confirmarVenda: boolean) {
+    const base = validarFormulario()
+    if (!base) return
+    registrar.mutate({ ...base, confirmarVenda })
+  }
 
-    registrar.mutate(payload)
+  function onSubmitEdicao(event: FormEvent) {
+    event.preventDefault()
+    const base = validarFormulario()
+    if (!base || !editando) return
+    atualizar.mutate({
+      id: editando.id,
+      payload: { ...base, status },
+    })
   }
 
   const salvando = registrar.isPending || atualizar.isPending
@@ -193,7 +265,7 @@ export function VendasPage() {
     <div>
       <PageHeader
         title="Vendas"
-        description="Registre pedidos com cliente, itens e total automático."
+        description="Registre pedidos com cliente, itens, descontos e total automático."
         actions={
           <>
             <PeriodoFiltro
@@ -221,9 +293,40 @@ export function VendasPage() {
         }
       />
 
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(
+          [
+            ['TODOS', 'Todos'],
+            ['ORCAMENTO', 'Orçamentos'],
+            ['CONFIRMADO', 'Vendas confirmadas'],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            variant={filtroLista === value ? 'primary' : 'secondary'}
+            onClick={() => {
+              setFiltroLista(value)
+              setPagina(0)
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
       {pedidos.isLoading ? <LoadingBlock /> : null}
       {!pedidos.isLoading && lista.length === 0 ? (
-        <EmptyState title="Nenhuma venda neste período" description="Registre a primeira venda do período." />
+        <EmptyState
+          title={
+            filtroLista === 'TODOS'
+              ? 'Nenhum pedido neste período'
+              : filtroLista === 'ORCAMENTO'
+                ? 'Nenhum orçamento neste período'
+                : 'Nenhuma venda confirmada neste período'
+          }
+          description="Registre um novo pedido ou ajuste o período ou o filtro."
+        />
       ) : null}
 
       {lista.length > 0 ? (
@@ -248,7 +351,7 @@ export function VendasPage() {
                   <Td className="font-medium">{clienteMap.get(pedido.clienteId) ?? 'Cliente'}</Td>
                   <Td>{naturezaPedidoLabel[pedido.natureza]}</Td>
                   <Td>
-                    <Badge tone={pedido.status === 'CONFIRMADO' ? 'ok' : 'neutral'}>
+                    <Badge tone={statusBadgeTone(pedido.status)}>
                       {statusPedidoLabel[pedido.status]}
                     </Badge>
                   </Td>
@@ -263,10 +366,28 @@ export function VendasPage() {
                   <Td>{formatCurrency(pedido.valorTotal)}</Td>
                   <Td>{formatCurrency(pedido.lucroBruto)}</Td>
                   <Td>
-                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(pedido)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" variant="ghost" onClick={() => abrirEdicao(pedido)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </Button>
+                      {pedido.status === 'ORCAMENTO' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-ok hover:bg-ok/10 hover:text-ok"
+                          disabled={concretizar.isPending}
+                          onClick={() => concretizar.mutate(pedido.id)}
+                        >
+                          <CheckCircle2 className="size-4" />
+                          Concretizar venda
+                        </Button>
+                      ) : null}
+                      <Button type="button" variant="ghost" onClick={() => setConfirmacaoExcluir(pedido)}>
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -282,20 +403,31 @@ export function VendasPage() {
         open={open}
         wide
         onClose={fecharModal}
-        title={editando ? 'Editar venda' : 'Nova venda'}
-        description="Escolha a cliente e os produtos. O subtotal atualiza sozinho."
+        title={editando ? 'Editar pedido' : 'Nova venda'}
+        description="Escolha a cliente e os produtos. Os totais atualizam conforme descontos."
       >
-        <form className="grid gap-4" onSubmit={onSubmit}>
+        <form className="grid gap-4" onSubmit={editando ? onSubmitEdicao : (e) => e.preventDefault()}>
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="Cliente" className="md:col-span-2">
-              <Select required value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-                <option value="">Selecione…</option>
-                {(clientes.data ?? []).map((cliente) => (
-                  <option key={cliente.id} value={cliente.id}>
-                    {cliente.nome}
-                  </option>
-                ))}
-              </Select>
+              <div className="flex flex-wrap items-stretch gap-2">
+                <Select
+                  required
+                  className="min-w-0 flex-1"
+                  value={clienteId}
+                  onChange={(e) => setClienteId(e.target.value)}
+                >
+                  <option value="">Selecione…</option>
+                  {(clientes.data ?? []).map((cliente) => (
+                    <option key={cliente.id} value={cliente.id}>
+                      {cliente.nome}
+                    </option>
+                  ))}
+                </Select>
+                <Button type="button" variant="secondary" onClick={() => setOpenNovoCliente(true)}>
+                  <Plus className="size-4" />
+                  Novo cliente
+                </Button>
+              </div>
             </Field>
             <Field label="Data">
               <Input
@@ -321,6 +453,7 @@ export function VendasPage() {
             {editando ? (
               <Field label="Status">
                 <Select value={status} onChange={(e) => setStatus(e.target.value as StatusPedido)}>
+                  <option value="ORCAMENTO">{statusPedidoLabel.ORCAMENTO}</option>
                   <option value="CONFIRMADO">{statusPedidoLabel.CONFIRMADO}</option>
                   <option value="CANCELADO">{statusPedidoLabel.CANCELADO}</option>
                 </Select>
@@ -335,6 +468,18 @@ export function VendasPage() {
             </Field>
           </div>
 
+          <Field label="Desconto no pedido (%)" className="max-w-xs">
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={descontoPercentualPedido}
+              onChange={(e) => setDescontoPercentualPedido(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-ink">Itens da venda</h3>
@@ -347,21 +492,18 @@ export function VendasPage() {
             {itens.map((item, index) => (
               <div
                 key={index}
-                className="grid gap-2 rounded-xl border border-line bg-white/70 p-3 md:grid-cols-[1.4fr_0.6fr_0.8fr_auto]"
+                className="grid gap-2 rounded-xl border border-line bg-white/70 p-3 md:grid-cols-[1.4fr_0.5fr_0.7fr_0.5fr_auto]"
               >
                 <Field label="Produto">
-                  <Select
-                    required
+                  <ProductCombobox
                     value={item.produtoId}
-                    onChange={(e) => atualizarItem(index, { produtoId: e.target.value })}
-                  >
-                    <option value="">Selecione…</option>
-                    {(produtos.data ?? []).map((produto) => (
-                      <option key={produto.id} value={produto.id}>
-                        {produto.nome} · estoque {produto.estoqueAtual}
-                      </option>
-                    ))}
-                  </Select>
+                    onSelect={(produto) => {
+                      atualizarItem(index, {
+                        produtoId: produto.id,
+                        precoUnitario: item.precoUnitario || String(produto.precoVenda),
+                      })
+                    }}
+                  />
                 </Field>
                 <Field label="Qtde">
                   <Input
@@ -382,6 +524,17 @@ export function VendasPage() {
                     onChange={(e) => atualizarItem(index, { precoUnitario: e.target.value })}
                   />
                 </Field>
+                <Field label="Desc. item (%)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={item.descontoPercentual}
+                    onChange={(e) => atualizarItem(index, { descontoPercentual: e.target.value })}
+                    placeholder="0"
+                  />
+                </Field>
                 <div className="flex items-end">
                   <Button
                     type="button"
@@ -396,26 +549,86 @@ export function VendasPage() {
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-paper-deep/60 px-4 py-3">
-            <p className="text-sm text-ink-soft">Subtotal da venda</p>
-            <p className="font-display text-2xl font-semibold">{formatCurrency(subtotal)}</p>
+          <div className="space-y-1 rounded-xl bg-paper-deep/60 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
+              <span>Subtotal dos itens</span>
+              <span>{formatCurrency(totais.subtotal)}</span>
+            </div>
+            {totais.descontoTotal > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-soft">
+                <span>Descontos aplicados</span>
+                <span>− {formatCurrency(totais.descontoTotal)}</span>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <p className="text-sm font-medium text-ink">Total do pedido</p>
+              <p className="font-display text-2xl font-semibold">{formatCurrency(totais.total)}</p>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="secondary" onClick={fecharModal}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={salvando}>
-              {salvando
-                ? editando
-                  ? 'Salvando…'
-                  : 'Registrando…'
-                : editando
-                  ? 'Salvar alterações'
-                  : 'Registrar venda'}
-            </Button>
+            {editando ? (
+              <Button type="submit" disabled={salvando}>
+                {salvando ? 'Salvando…' : 'Salvar alterações'}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={salvando}
+                  onClick={() => salvarNovo(false)}
+                >
+                  {registrar.isPending ? 'Salvando…' : 'Salvar como Orçamento'}
+                </Button>
+                <Button type="button" disabled={salvando} onClick={() => salvarNovo(true)}>
+                  {registrar.isPending ? 'Registrando…' : 'Concretizar Venda'}
+                </Button>
+              </>
+            )}
           </div>
         </form>
+      </Modal>
+
+      <QuickClienteCadastroModal
+        open={openNovoCliente}
+        onClose={() => setOpenNovoCliente(false)}
+        onClienteCriado={aoClienteRapidoCriado}
+      />
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir pedido"
+        description="O pedido será removido permanentemente. Esta ação não pode ser desfeita."
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir o pedido de{' '}
+          <strong>
+            {confirmacaoExcluir ? clienteMap.get(confirmacaoExcluir.clienteId) ?? 'cliente' : ''}
+          </strong>{' '}
+          em{' '}
+          <strong>
+            {confirmacaoExcluir ? formatDate(confirmacaoExcluir.dataPedido) : ''}
+          </strong>
+          ?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )

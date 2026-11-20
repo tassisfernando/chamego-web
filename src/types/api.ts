@@ -11,7 +11,7 @@ export type CategoriaInsumo =
   | 'CORANTE'
   | 'OUTRO'
 export type UnidadeMedida = 'UN' | 'ML' | 'G' | 'KG' | 'MT'
-export type StatusPedido = 'RASCUNHO' | 'CONFIRMADO' | 'CANCELADO'
+export type StatusPedido = 'RASCUNHO' | 'ORCAMENTO' | 'CONFIRMADO' | 'CANCELADO'
 export type NaturezaPedido = 'VENDA' | 'DOACAO' | 'PARCERIA' | 'CONTRIBUICAO'
 export type TipoDespesa = 'INSUMO' | 'FERRAMENTA' | 'OPERACIONAL' | 'MARKETING'
 
@@ -28,6 +28,7 @@ export interface ParametrosPaginacao {
   size?: number
   sort?: string
   busca?: string
+  status?: StatusPedido
 }
 
 export interface LoginPayload {
@@ -47,20 +48,24 @@ export interface Cliente {
   id: string
   nome: string
   telefone?: string | null
+  email?: string | null
   cidade?: string | null
   estado?: string | null
   dataCadastro: string
   dataNascimento?: string | null
   statusCupom: StatusCupom
+  observacao?: string | null
   ativo: boolean
 }
 
 export interface CadastrarClientePayload {
   nome: string
   telefone?: string
+  email?: string
   cidade?: string
   estado?: string
   dataNascimento?: string
+  observacao?: string
 }
 
 export interface ItemReceita {
@@ -134,6 +139,8 @@ export interface ItemPedido {
   quantidade: number
   precoUnitario: number
   custoUnitario?: number
+  descontoPercentual?: number
+  totalLiquido?: number
 }
 
 export interface Pedido {
@@ -143,9 +150,18 @@ export interface Pedido {
   status: StatusPedido
   natureza: NaturezaPedido
   observacao?: string | null
+  descontoPercentual?: number
+  subtotalItens?: number
   valorTotal: number
   lucroBruto: number
   itens: ItemPedido[]
+}
+
+export interface ItemPedidoPayload {
+  produtoId: string
+  quantidade: number
+  precoUnitario: number
+  descontoPercentual?: number
 }
 
 export interface RegistrarPedidoPayload {
@@ -153,19 +169,12 @@ export interface RegistrarPedidoPayload {
   dataPedido?: string
   natureza?: NaturezaPedido
   observacao?: string
-  itens: Array<{
-    produtoId: string
-    quantidade: number
-    precoUnitario: number
-  }>
+  descontoPercentual?: number
+  confirmarVenda?: boolean
+  itens: ItemPedidoPayload[]
 }
 
-export interface PedidoCriado {
-  id: string
-  status: StatusPedido
-  valorTotal: number
-  lucroBruto: number
-}
+export type PedidoCriado = Pedido
 
 export interface Despesa {
   id: string
@@ -263,11 +272,8 @@ export interface AtualizarPedidoPayload {
   natureza?: NaturezaPedido
   status?: StatusPedido
   observacao?: string
-  itens: Array<{
-    produtoId: string
-    quantidade: number
-    precoUnitario: number
-  }>
+  descontoPercentual?: number
+  itens: ItemPedidoPayload[]
 }
 
 export interface AtualizarProducaoPayload {

@@ -43,7 +43,8 @@ export const naturezaPedidoLabel: Record<NaturezaPedido, string> = {
 
 export const statusPedidoLabel: Record<StatusPedido, string> = {
   RASCUNHO: 'Rascunho',
-  CONFIRMADO: 'Confirmado',
+  ORCAMENTO: 'Orçamento',
+  CONFIRMADO: 'Venda confirmada',
   CANCELADO: 'Cancelado',
 }
 

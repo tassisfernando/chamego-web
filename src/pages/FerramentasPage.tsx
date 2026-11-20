@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { ferramentasApi } from '@/api/services'
@@ -37,6 +37,9 @@ export function FerramentasPage() {
   const queryClient = useQueryClient()
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<{ id: string; nome: string } | null>(
+    null,
+  )
   const [form, setForm] = useState(emptyForm)
 
   const ferramentas = useQuery({
@@ -54,6 +57,17 @@ export function FerramentasPage() {
       setOpen(false)
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível cadastrar a ferramenta.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: ferramentasApi.excluir,
+    onSuccess: () => {
+      toast.success('Ferramenta excluída.')
+      queryClient.invalidateQueries({ queryKey: ['ferramentas'] })
+      queryClient.invalidateQueries({ queryKey: ['ferramentas-opcoes'] })
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir a ferramenta.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -98,6 +112,7 @@ export function FerramentasPage() {
                 <Th>Valor</Th>
                 <Th>Compra</Th>
                 <Th>Observação</Th>
+                <Th>Ações</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white/70">
@@ -110,6 +125,16 @@ export function FerramentasPage() {
                   <Td>{formatCurrency(ferramenta.valorAquisicao)}</Td>
                   <Td>{formatDate(ferramenta.dataCompra)}</Td>
                   <Td>{ferramenta.observacao || '—'}</Td>
+                  <Td>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setConfirmacaoExcluir({ id: ferramenta.id, nome: ferramenta.nome })}
+                    >
+                      <Trash2 className="size-4" />
+                      Excluir
+                    </Button>
+                  </Td>
                 </tr>
               ))}
             </tbody>
@@ -190,6 +215,30 @@ export function FerramentasPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir ferramenta"
+        description="A ferramenta será removida permanentemente do cadastro."
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir <strong>{confirmacaoExcluir?.nome}</strong>?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )

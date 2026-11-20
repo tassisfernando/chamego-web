@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { despesasApi, ferramentasApi, insumosApi } from '@/api/services'
@@ -45,6 +45,7 @@ export function GastosPage() {
   const { pagina, tamanho, setPagina, setTamanho } = usePaginacao()
   const [open, setOpen] = useState(false)
   const [editando, setEditando] = useState<Despesa | null>(null)
+  const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Despesa | null>(null)
   const [form, setForm] = useState(emptyForm)
 
   const despesas = useQuery({
@@ -127,6 +128,19 @@ export function GastosPage() {
       fecharModal()
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível atualizar o gasto.')),
+  })
+
+  const excluir = useMutation({
+    mutationFn: despesasApi.excluir,
+    onSuccess: () => {
+      toast.success('Gasto excluído.')
+      queryClient.invalidateQueries({ queryKey: ['despesas'] })
+      queryClient.invalidateQueries({ queryKey: ['financeiro'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
+      setConfirmacaoExcluir(null)
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível excluir o gasto.')),
   })
 
   function onSubmit(event: FormEvent) {
@@ -217,10 +231,16 @@ export function GastosPage() {
                   </Td>
                   <Td>{formatCurrency(despesa.valor)}</Td>
                   <Td>
-                    <Button type="button" variant="ghost" onClick={() => abrirEdicao(despesa)}>
-                      <Pencil className="size-4" />
-                      Editar
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" variant="ghost" onClick={() => abrirEdicao(despesa)}>
+                        <Pencil className="size-4" />
+                        Editar
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmacaoExcluir(despesa)}>
+                        <Trash2 className="size-4" />
+                        Excluir
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}
@@ -358,6 +378,34 @@ export function GastosPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmacaoExcluir}
+        onClose={() => setConfirmacaoExcluir(null)}
+        title="Excluir gasto"
+        description={
+          confirmacaoExcluir?.tipo === 'INSUMO' && confirmacaoExcluir.quantidade
+            ? 'Compras de material terão o estoque revertido. Se o material já foi consumido, a exclusão pode ser bloqueada.'
+            : 'Esta ação não pode ser desfeita.'
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          Confirma excluir <strong>{confirmacaoExcluir?.descricao}</strong>?
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setConfirmacaoExcluir(null)}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={excluir.isPending}
+            onClick={() => confirmacaoExcluir && excluir.mutate(confirmacaoExcluir.id)}
+          >
+            {excluir.isPending ? 'Excluindo…' : 'Excluir'}
+          </Button>
+        </div>
       </Modal>
     </div>
   )
