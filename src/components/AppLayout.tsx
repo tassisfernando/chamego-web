@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Boxes,
   CircleDollarSign,
+  Calculator,
   Factory,
   Flame,
   FlaskConical,
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { to: '/vendas', label: 'Vendas', icon: CircleDollarSign },
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/produtos', label: 'Velas e kits', icon: Flame },
+  { to: '/precificacao', label: 'Precificação', icon: Calculator },
   { to: '/insumos', label: 'Estoque', icon: FlaskConical },
   { to: '/producao', label: 'Produção', icon: Factory },
   { to: '/gastos', label: 'Gastos', icon: Boxes },

@@ -284,3 +284,53 @@ export interface AtualizarProducaoPayload {
 }
 
 export type AtualizarDespesaPayload = RegistrarDespesaPayload
+
+export type TipoPrecificacao = 'VELA_INDIVIDUAL' | 'KIT'
+export type TipoItemPrecificacao = 'INSUMO' | 'PRODUTO' | 'EXTRA'
+
+export interface ItemPrecificacao {
+  id?: string
+  tipo: TipoItemPrecificacao
+  produtoId?: string | null
+  insumoId?: string | null
+  descricao?: string | null
+  quantidade: number
+  unidadeMedida?: UnidadeMedida | null
+  custoUnitario: number
+  subtotal?: number
+}
+
+export interface Precificacao {
+  id: string
+  titulo: string
+  tipo: TipoPrecificacao
+  produtoReferenciaId?: string | null
+  produtoPublicadoId?: string | null
+  margemPercentual: number
+  precoVenda: number
+  custoTotal: number
+  lucroUnitario: number
+  observacao?: string | null
+  criadoEm: string
+  atualizadoEm: string
+  itens?: ItemPrecificacao[]
+}
+
+export interface SimulacaoPrecificacao {
+  itens: ItemPrecificacao[]
+  custoTotal: number
+  margemPercentual: number
+  precoVenda: number
+  lucroUnitario: number
+  alerta?: 'MARGEM_NEGATIVA' | 'MARGEM_BAIXA' | 'CUSTO_ZERO' | null
+}
+
+export interface SalvarPrecificacaoPayload {
+  titulo: string
+  tipo: TipoPrecificacao
+  produtoReferenciaId?: string
+  itens: Omit<ItemPrecificacao, 'id' | 'subtotal'>[]
+  margemPercentual?: number
+  precoVenda?: number
+  observacao?: string
+}

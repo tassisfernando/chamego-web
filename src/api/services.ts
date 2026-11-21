@@ -18,11 +18,15 @@ import type {
   Pagina,
   PainelAniversariantes,
   ParametrosPaginacao,
+  ItemPrecificacao,
   Pedido,
   PedidoCriado,
   Periodo,
+  Precificacao,
   Producao,
   Produto,
+  SalvarPrecificacaoPayload,
+  SimulacaoPrecificacao,
   RegistrarDespesaPayload,
   RegistrarPedidoPayload,
   RegistrarProducaoPayload,
@@ -182,6 +186,35 @@ export const notificacoesApi = {
     (await api.get<NotificacaoAniversarioConfig>('/api/notifications/birthdays/config')).data,
   dispararResumoDiario: async () =>
     (await api.post<DisparoAniversarioResposta>('/api/notifications/birthdays/trigger')).data,
+}
+
+export const precificacoesApi = {
+  listar: async (p?: ParametrosPaginacao) =>
+    (
+      await api.get<Pagina<Precificacao>>('/api/precificacoes', { params: paramsPaginacao(p) })
+    ).data,
+  buscar: async (id: string) => (await api.get<Precificacao>(`/api/precificacoes/${id}`)).data,
+  fichaProduto: async (produtoId: string) =>
+    (await api.get<ItemPrecificacao[]>(`/api/precificacoes/ficha-produto/${produtoId}`)).data,
+  simular: async (payload: SalvarPrecificacaoPayload, signal?: AbortSignal) =>
+    (await api.post<SimulacaoPrecificacao>('/api/precificacoes/simular', payload, { signal })).data,
+  salvar: async (payload: SalvarPrecificacaoPayload) =>
+    (await api.post<Precificacao>('/api/precificacoes', payload)).data,
+  atualizar: async (id: string, payload: Omit<SalvarPrecificacaoPayload, 'tipo'>) =>
+    (await api.put<Precificacao>(`/api/precificacoes/${id}`, payload)).data,
+  excluir: async (id: string) => {
+    await api.delete(`/api/precificacoes/${id}`)
+  },
+  aplicarPreco: async (id: string, produtoId?: string) =>
+    (await api.post<{ produtoId: string; precoVenda: number }>(`/api/precificacoes/${id}/aplicar-preco`, null, {
+      params: produtoId ? { produtoId } : undefined,
+    })).data,
+  publicarKit: async (id: string, nomeProduto?: string) =>
+    (
+      await api.post<{ produtoId: string; nome: string }>(`/api/precificacoes/${id}/publicar-kit`, null, {
+        params: nomeProduto ? { nomeProduto } : undefined,
+      })
+    ).data,
 }
 
 export const financeiroApi = {

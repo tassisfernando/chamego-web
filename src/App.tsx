@@ -8,6 +8,7 @@ import { GastosPage } from '@/pages/GastosPage'
 import { InsumosPage } from '@/pages/InsumosPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { ProducaoPage } from '@/pages/ProducaoPage'
+import { PrecificacaoPage } from '@/pages/PrecificacaoPage'
 import { ProdutosPage } from '@/pages/ProdutosPage'
 import { VendasPage } from '@/pages/VendasPage'
 
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="vendas" element={<VendasPage />} />
             <Route path="clientes" element={<ClientesPage />} />
             <Route path="produtos" element={<ProdutosPage />} />
+            <Route path="precificacao" element={<PrecificacaoPage />} />
             <Route path="insumos" element={<InsumosPage />} />
             <Route path="producao" element={<ProducaoPage />} />
             <Route path="gastos" element={<GastosPage />} />
