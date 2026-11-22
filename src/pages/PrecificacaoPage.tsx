@@ -24,6 +24,7 @@ import {
 import { usePaginacao } from '@/hooks/usePaginacao'
 import { usePrecificacaoSimulacao } from '@/hooks/usePrecificacaoSimulacao'
 import { margemPorPreco, precoPorMargem } from '@/lib/precificacaoCalculos'
+import { prepararLinhasComCadastroInsumo } from '@/lib/prepararInsumosPrecificacao'
 import {
   itemApiParaLinha,
   linhaPrecificacaoVazia,
@@ -69,7 +70,7 @@ export function PrecificacaoPage() {
   const [editandoId, setEditandoId] = useState<string | null>(null)
 
   const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
-  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: () => insumosApi.opcoes() })
   const salvos = useQuery({
     queryKey: ['precificacoes', pagina, tamanho],
     queryFn: () => precificacoesApi.listar({ page: pagina, size: tamanho }),
@@ -174,6 +175,8 @@ export function PrecificacaoPage() {
         key: crypto.randomUUID(),
         ...linhaPrecificacaoVazia('INSUMO'),
         insumoId,
+        nomeMaterial: undefined,
+        cadastrarNoCatalogo: false,
         descricao: insumo.nome,
         quantidade: '1',
         unidadeMedida: insumo.unidadeMedida,
@@ -190,19 +193,28 @@ export function PrecificacaoPage() {
   }
 
   const salvar = useMutation({
-    mutationFn: () =>
-      editandoId
-        ? precificacoesApi.atualizar(
-            editandoId,
-            montarPayloadSalvar(titulo, aba, produtoReferenciaId, linhas, margemPercentual, precoVenda, observacao, modoPreco),
-          )
-        : precificacoesApi.salvar(
-            montarPayloadSalvar(titulo, aba, produtoReferenciaId, linhas, margemPercentual, precoVenda, observacao, modoPreco),
-          ),
+    mutationFn: async () => {
+      const linhasProntas = await prepararLinhasComCadastroInsumo(linhas)
+      const payload = montarPayloadSalvar(
+        titulo,
+        aba,
+        produtoReferenciaId,
+        linhasProntas,
+        margemPercentual,
+        precoVenda,
+        observacao,
+        modoPreco,
+      )
+      if (editandoId) {
+        return precificacoesApi.atualizar(editandoId, payload)
+      }
+      return precificacoesApi.salvar(payload)
+    },
     onSuccess: () => {
       toast.success('Precificação salva.')
       queryClient.invalidateQueries({ queryKey: ['precificacoes'] })
       queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
+      queryClient.invalidateQueries({ queryKey: ['insumos-opcoes'] })
       setEditandoId(null)
     },
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível salvar.')),

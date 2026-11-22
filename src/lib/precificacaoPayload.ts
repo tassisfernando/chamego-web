@@ -11,6 +11,8 @@ export type LinhaPrecificacaoForm = {
   tipo: TipoItemPrecificacao
   produtoId?: string
   insumoId?: string
+  nomeMaterial?: string
+  cadastrarNoCatalogo?: boolean
   descricao: string
   modoCalculo: ModoCalculoMaterial
   quantidade: string
@@ -36,8 +38,8 @@ export function linhaPrecificacaoVazia(tipo: TipoItemPrecificacao = 'INSUMO'): O
 }
 
 function normalizarTipoLinha(linha: LinhaPrecificacaoForm): TipoItemPrecificacao {
-  if (linha.tipo === 'INSUMO' && !linha.insumoId) return 'EXTRA'
   if (linha.tipo === 'PRODUTO' && !linha.produtoId) return 'EXTRA'
+  if (linha.tipo === 'EXTRA') return 'EXTRA'
   return linha.tipo
 }
 
@@ -65,11 +67,16 @@ export function mapearItensPayload(linhas: LinhaPrecificacaoForm[]) {
     .filter((l) => Number(l.quantidade) > 0)
     .map((l) => {
       const tipo = normalizarTipoLinha(l)
-      const descricao = l.descricao.trim() || (tipo === 'EXTRA' ? 'Item' : undefined)
+      const nomeAvulso = !l.insumoId
+        ? (l.nomeMaterial?.trim() || l.descricao.trim() || undefined)
+        : undefined
+      const descricao =
+        l.descricao.trim() || nomeAvulso || (tipo === 'EXTRA' ? 'Item' : undefined)
       return {
         tipo,
         produtoId: tipo === 'PRODUTO' ? l.produtoId : undefined,
-        insumoId: tipo === 'INSUMO' ? l.insumoId : undefined,
+        insumoId: tipo === 'INSUMO' && l.insumoId ? l.insumoId : undefined,
+        nomeMaterial: tipo === 'INSUMO' && !l.insumoId ? nomeAvulso : undefined,
         descricao,
         modoCalculo: tipo === 'PRODUTO' ? 'UNITARIO' : l.modoCalculo,
         quantidade: Number(l.quantidade),
@@ -129,6 +136,7 @@ export function itemApiParaLinha(item: {
   tipo: TipoItemPrecificacao
   produtoId?: string | null
   insumoId?: string | null
+  nomeMaterial?: string | null
   descricao?: string | null
   modoCalculo?: ModoCalculoMaterial | null
   quantidade: number
@@ -142,7 +150,9 @@ export function itemApiParaLinha(item: {
     tipo: item.tipo,
     produtoId: item.produtoId ?? undefined,
     insumoId: item.insumoId ?? undefined,
-    descricao: item.descricao ?? '',
+    nomeMaterial: item.nomeMaterial ?? item.descricao ?? undefined,
+    cadastrarNoCatalogo: false,
+    descricao: item.descricao ?? item.nomeMaterial ?? '',
     modoCalculo: item.modoCalculo ?? 'UNITARIO',
     quantidade: String(item.quantidade),
     unidadeMedida: item.unidadeMedida ?? 'UN',

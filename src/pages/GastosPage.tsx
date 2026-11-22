@@ -53,7 +53,7 @@ export function GastosPage() {
     queryFn: () =>
       despesasApi.listar(periodo, { page: pagina, size: tamanho, sort: 'dataDespesa,desc' }),
   })
-  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: () => insumosApi.opcoes() })
   const ferramentas = useQuery({ queryKey: ['ferramentas-opcoes'], queryFn: ferramentasApi.opcoes })
 
   const lista = despesas.data?.conteudo ?? []

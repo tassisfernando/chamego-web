@@ -14,7 +14,7 @@ type Props = {
 export function InsumoCombobox({ value, onSelect }: Props) {
   const [termo, setTermo] = useState('')
   const [aberto, setAberto] = useState(false)
-  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: () => insumosApi.opcoes() })
 
   const selecionado = useMemo(
     () => (insumos.data ?? []).find((i) => i.id === value),

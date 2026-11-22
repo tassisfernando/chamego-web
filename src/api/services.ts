@@ -97,7 +97,12 @@ export const produtosApi = {
 export const insumosApi = {
   listar: async (p?: ParametrosPaginacao) =>
     (await api.get<Pagina<Insumo>>('/api/insumos', { params: paramsPaginacao(p) })).data,
-  opcoes: async () => (await api.get<Insumo[]>('/api/insumos/opcoes')).data,
+  opcoes: async (search?: string) =>
+    (
+      await api.get<Insumo[]>('/api/insumos/opcoes', {
+        params: search?.trim() ? { search: search.trim() } : undefined,
+      })
+    ).data,
   cadastrar: async (payload: CadastrarInsumoPayload) =>
     (await api.post<Insumo>('/api/insumos', payload)).data,
   atualizar: async (id: string, payload: AtualizarInsumoPayload) =>

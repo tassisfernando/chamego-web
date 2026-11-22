@@ -106,7 +106,7 @@ export function DashboardPage() {
   })
 
   const produtos = useQuery({ queryKey: ['produtos-opcoes'], queryFn: () => produtosApi.opcoes() })
-  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: () => insumosApi.opcoes() })
   const painel = useQuery({
     queryKey: ['aniversariantes-painel'],
     queryFn: clientesApi.painelAniversariantes,

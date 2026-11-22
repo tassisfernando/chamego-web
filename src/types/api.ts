@@ -295,6 +295,7 @@ export interface ItemPrecificacao {
   tipo: TipoItemPrecificacao
   produtoId?: string | null
   insumoId?: string | null
+  nomeMaterial?: string | null
   descricao?: string | null
   modoCalculo?: ModoCalculoMaterial | null
   quantidade: number

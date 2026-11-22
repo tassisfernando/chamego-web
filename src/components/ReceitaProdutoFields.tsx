@@ -43,7 +43,7 @@ export function receitaParaLinhas(receita: ItemReceita[]): LinhaReceitaForm[] {
 }
 
 export function ReceitaProdutoFields({ linhas, onChange }: Props) {
-  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: insumosApi.opcoes })
+  const insumos = useQuery({ queryKey: ['insumos-opcoes'], queryFn: () => insumosApi.opcoes() })
 
   function aoSelecionarInsumo(index: number, insumo: Insumo) {
     onChange(
