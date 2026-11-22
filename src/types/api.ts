@@ -10,7 +10,8 @@ export type CategoriaInsumo =
   | 'SPA'
   | 'CORANTE'
   | 'OUTRO'
-export type UnidadeMedida = 'UN' | 'ML' | 'G' | 'KG' | 'MT'
+export type UnidadeMedida = 'UN' | 'ML' | 'L' | 'G' | 'KG' | 'MT' | 'CM'
+export type ModoCalculoMaterial = 'UNITARIO' | 'FRACIONADO'
 export type StatusPedido = 'RASCUNHO' | 'ORCAMENTO' | 'CONFIRMADO' | 'CANCELADO'
 export type NaturezaPedido = 'VENDA' | 'DOACAO' | 'PARCERIA' | 'CONTRIBUICAO'
 export type TipoDespesa = 'INSUMO' | 'FERRAMENTA' | 'OPERACIONAL' | 'MARKETING'
@@ -255,6 +256,7 @@ export interface AtualizarProdutoPayload {
   precoVenda?: number
   custoPadrao?: number
   estoqueAtual?: number
+  receita?: ItemReceita[]
 }
 
 export interface AtualizarInsumoPayload {
@@ -294,9 +296,13 @@ export interface ItemPrecificacao {
   produtoId?: string | null
   insumoId?: string | null
   descricao?: string | null
+  modoCalculo?: ModoCalculoMaterial | null
   quantidade: number
   unidadeMedida?: UnidadeMedida | null
   custoUnitario: number
+  valorEmbalagem?: number | null
+  quantidadeEmbalagem?: number | null
+  unidadeEmbalagem?: UnidadeMedida | null
   subtotal?: number
 }
 

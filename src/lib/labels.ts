@@ -29,9 +29,11 @@ export const categoriaInsumoLabel: Record<CategoriaInsumo, string> = {
 export const unidadeLabel: Record<UnidadeMedida, string> = {
   UN: 'Unidade',
   ML: 'ml',
+  L: 'L',
   G: 'g',
   KG: 'kg',
   MT: 'm',
+  CM: 'cm',
 }
 
 export const naturezaPedidoLabel: Record<NaturezaPedido, string> = {

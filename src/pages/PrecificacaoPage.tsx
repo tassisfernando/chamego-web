@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { insumosApi, precificacoesApi, produtosApi } from '@/api/services'
 import { InsumoCombobox } from '@/components/InsumoCombobox'
+import { PrecificacaoTabelaItens } from '@/components/PrecificacaoTabelaItens'
 import { Paginacao } from '@/components/Paginacao'
 import { ProductCombobox } from '@/components/ProductCombobox'
 import {
@@ -22,8 +23,14 @@ import {
 } from '@/components/ui'
 import { usePaginacao } from '@/hooks/usePaginacao'
 import { usePrecificacaoSimulacao } from '@/hooks/usePrecificacaoSimulacao'
-import { margemPorPreco, precoPorMargem, totalCustoLinhas } from '@/lib/precificacaoCalculos'
-import { montarPayloadSalvar, type LinhaPrecificacaoForm } from '@/lib/precificacaoPayload'
+import { margemPorPreco, precoPorMargem } from '@/lib/precificacaoCalculos'
+import {
+  itemApiParaLinha,
+  linhaPrecificacaoVazia,
+  montarPayloadSalvar,
+  totalCustoFormulario,
+  type LinhaPrecificacaoForm,
+} from '@/lib/precificacaoPayload'
 import { formatCurrency, parseApiError } from '@/lib/utils'
 import type {
   ItemPrecificacao,
@@ -38,22 +45,7 @@ type ModoAba = TipoPrecificacao
 type LinhaLocal = LinhaPrecificacaoForm & { key: string }
 
 function novaLinha(tipo: TipoItemPrecificacao = 'INSUMO'): LinhaLocal {
-  return {
-    key: crypto.randomUUID(),
-    tipo,
-    descricao: '',
-    quantidade: '1',
-    custoUnitario: '',
-  }
-}
-
-function linhasNumericas(linhas: LinhaLocal[]) {
-  return linhas
-    .filter((l) => Number(l.quantidade) > 0)
-    .map((l) => ({
-      quantidade: Number(l.quantidade) || 0,
-      custoUnitario: Number(l.custoUnitario) || 0,
-    }))
+  return { key: crypto.randomUUID(), ...linhaPrecificacaoVazia(tipo) }
 }
 
 function alertaLabel(alerta?: string | null) {
@@ -106,7 +98,7 @@ export function PrecificacaoPage() {
     onSincronizarDerivado: sincronizarDerivado,
   })
 
-  const custoLocal = useMemo(() => totalCustoLinhas(linhasNumericas(linhas)), [linhas])
+  const custoLocal = useMemo(() => totalCustoFormulario(linhas), [linhas])
   const resumoLocal = useMemo(() => {
     if (modoPreco === 'preco' && precoVenda) {
       return margemPorPreco(custoLocal, Number(precoVenda) || 0)
@@ -148,12 +140,8 @@ export function PrecificacaoPage() {
       setLinhas(
         ficha.map((item) => ({
           key: crypto.randomUUID(),
-          tipo: 'INSUMO',
+          ...itemApiParaLinha({ ...item, tipo: 'INSUMO' }),
           insumoId: item.insumoId ?? undefined,
-          descricao: item.descricao ?? '',
-          quantidade: String(item.quantidade),
-          unidadeMedida: item.unidadeMedida ?? undefined,
-          custoUnitario: String(item.custoUnitario),
         })),
       )
     } catch (error) {
@@ -168,7 +156,7 @@ export function PrecificacaoPage() {
       ...lista,
       {
         key: crypto.randomUUID(),
-        tipo: 'PRODUTO',
+        ...linhaPrecificacaoVazia('PRODUTO'),
         produtoId,
         descricao: produto.nome,
         quantidade: '1',
@@ -184,12 +172,15 @@ export function PrecificacaoPage() {
       ...lista,
       {
         key: crypto.randomUUID(),
-        tipo: 'INSUMO',
+        ...linhaPrecificacaoVazia('INSUMO'),
         insumoId,
         descricao: insumo.nome,
         quantidade: '1',
         unidadeMedida: insumo.unidadeMedida,
+        unidadeEmbalagem: insumo.unidadeMedida,
         custoUnitario: String(insumo.custoMedio),
+        valorEmbalagem: String(insumo.custoMedio),
+        quantidadeEmbalagem: '1',
       },
     ])
   }
@@ -260,13 +251,7 @@ export function PrecificacaoPage() {
     setLinhas(
       (detalhe.itens ?? []).map((l: ItemPrecificacao) => ({
         key: l.id ?? crypto.randomUUID(),
-        tipo: l.tipo,
-        produtoId: l.produtoId ?? undefined,
-        insumoId: l.insumoId ?? undefined,
-        descricao: l.descricao ?? '',
-        quantidade: String(l.quantidade),
-        unidadeMedida: l.unidadeMedida ?? undefined,
-        custoUnitario: String(l.custoUnitario),
+        ...itemApiParaLinha(l),
       })),
     )
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -342,73 +327,7 @@ export function PrecificacaoPage() {
             ) : null}
           </div>
 
-          <TableShell>
-            <thead>
-              <tr>
-                <Th>Item</Th>
-                <Th>Qtde</Th>
-                <Th>Custo un.</Th>
-                <Th>Subtotal</Th>
-                <Th aria-label="Ações"> </Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line bg-white/70">
-              {linhas.map((linha, index) => {
-                const sub = (Number(linha.quantidade) || 0) * (Number(linha.custoUnitario) || 0)
-                return (
-                  <tr key={linha.key}>
-                    <Td>
-                      <Input
-                        value={linha.descricao}
-                        onChange={(e) =>
-                          setLinhas((lista) =>
-                            lista.map((l, i) => (i === index ? { ...l, descricao: e.target.value } : l)),
-                          )
-                        }
-                        placeholder="Descrição"
-                      />
-                    </Td>
-                    <Td>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.0001"
-                        value={linha.quantidade}
-                        onChange={(e) =>
-                          setLinhas((lista) =>
-                            lista.map((l, i) => (i === index ? { ...l, quantidade: e.target.value } : l)),
-                          )
-                        }
-                      />
-                    </Td>
-                    <Td>
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={linha.custoUnitario}
-                        onChange={(e) =>
-                          setLinhas((lista) =>
-                            lista.map((l, i) => (i === index ? { ...l, custoUnitario: e.target.value } : l)),
-                          )
-                        }
-                      />
-                    </Td>
-                    <Td>{formatCurrency(sub)}</Td>
-                    <Td>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setLinhas((lista) => lista.filter((_, i) => i !== index))}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </Td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </TableShell>
+          <PrecificacaoTabelaItens linhas={linhas} onChange={setLinhas} />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="border-line bg-paper-deep/40">

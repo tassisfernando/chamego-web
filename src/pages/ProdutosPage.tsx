@@ -3,6 +3,12 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { produtosApi } from '@/api/services'
+import {
+  linhasReceitaParaPayload,
+  receitaParaLinhas,
+  ReceitaProdutoFields,
+  type LinhaReceitaForm,
+} from '@/components/ReceitaProdutoFields'
 import { Paginacao } from '@/components/Paginacao'
 import {
   Badge,
@@ -43,6 +49,7 @@ export function ProdutosPage() {
   const [editando, setEditando] = useState<Produto | null>(null)
   const [confirmacaoExcluir, setConfirmacaoExcluir] = useState<Produto | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [receitaLinhas, setReceitaLinhas] = useState<LinhaReceitaForm[]>([])
 
   useEffect(() => {
     setPagina(0)
@@ -58,11 +65,13 @@ export function ProdutosPage() {
     setOpen(false)
     setEditando(null)
     setForm(emptyForm)
+    setReceitaLinhas([])
   }
 
   function abrirNovo() {
     setEditando(null)
     setForm(emptyForm)
+    setReceitaLinhas([])
     setOpen(true)
   }
 
@@ -76,6 +85,7 @@ export function ProdutosPage() {
       custoPadrao: String(produto.custoPadrao),
       estoqueAtual: String(produto.estoqueAtual),
     })
+    setReceitaLinhas(receitaParaLinhas(produto.receita ?? []))
     setOpen(true)
   }
 
@@ -99,6 +109,7 @@ export function ProdutosPage() {
         precoVenda: form.precoVenda ? Number(form.precoVenda) : undefined,
         custoPadrao: form.custoPadrao ? Number(form.custoPadrao) : undefined,
         estoqueAtual: form.estoqueAtual ? Number(form.estoqueAtual) : undefined,
+        receita: linhasReceitaParaPayload(receitaLinhas),
       }),
     onSuccess: () => {
       toast.success('Produto atualizado com sucesso.')
@@ -132,6 +143,7 @@ export function ProdutosPage() {
       pesoGramas: form.pesoGramas ? Number(form.pesoGramas) : undefined,
       precoVenda: form.precoVenda ? Number(form.precoVenda) : undefined,
       custoPadrao: form.custoPadrao ? Number(form.custoPadrao) : undefined,
+      receita: linhasReceitaParaPayload(receitaLinhas),
     })
   }
 
@@ -226,6 +238,7 @@ export function ProdutosPage() {
       <Modal
         open={open}
         onClose={fecharModal}
+        wide
         title={editando ? 'Editar produto' : 'Novo produto'}
       >
         <form className="grid gap-3" onSubmit={onSubmit}>
@@ -287,6 +300,7 @@ export function ProdutosPage() {
               </Field>
             ) : null}
           </div>
+          <ReceitaProdutoFields linhas={receitaLinhas} onChange={setReceitaLinhas} />
           <div className="mt-2 flex justify-end gap-2">
             <Button type="button" variant="secondary" onClick={fecharModal}>
               Cancelar
