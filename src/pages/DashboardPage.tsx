@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Cake, MessageCircle, Package, Send } from 'lucide-react'
+import { AlertTriangle, Cake, ChevronRight, MessageCircle, Package, Send } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { clientesApi, financeiroApi, insumosApi, notificacoesApi, pedidosApi, produtosApi } from '@/api/services'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
@@ -11,18 +13,136 @@ import {
   LoadingBlock,
   PageHeader,
   StatCard,
-  TableShell,
-  Td,
-  Th,
 } from '@/components/ui'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { abrirWhatsApp, sanitizarTelefoneBr } from '@/lib/whatsapp'
 import { formatCurrency, formatDate, parseApiError } from '@/lib/utils'
-import type { AniversarianteResumo, EntregaAgendada } from '@/types/api'
+import type { AniversarianteResumo, EntregaAgendada, Insumo, Produto } from '@/types/api'
 import { statusPedidoLabel } from '@/lib/labels'
 
 const ESTOQUE_BAIXO_PRODUTO = 5
 const ESTOQUE_BAIXO_INSUMO = 20
+const ALERTAS_ESTOQUE_INICIAL = 5
+
+type AlertaEstoqueItem = {
+  id: string
+  nome: string
+  tipo: 'produto' | 'insumo'
+  saldo: number
+  limite: number
+  unidade: string
+  href: string
+}
+
+function montarAlertasEstoque(produtos: Produto[], insumos: Insumo[]): AlertaEstoqueItem[] {
+  const deProdutos: AlertaEstoqueItem[] = produtos
+    .filter((item) => item.estoqueAtual <= ESTOQUE_BAIXO_PRODUTO)
+    .map((item) => ({
+      id: item.id,
+      nome: item.nome,
+      tipo: 'produto',
+      saldo: item.estoqueAtual,
+      limite: ESTOQUE_BAIXO_PRODUTO,
+      unidade: 'un',
+      href: '/produtos',
+    }))
+  const deInsumos: AlertaEstoqueItem[] = insumos
+    .filter((item) => Number(item.estoqueAtual) <= ESTOQUE_BAIXO_INSUMO)
+    .map((item) => ({
+      id: item.id,
+      nome: item.marca ? `${item.nome} · ${item.marca}` : item.nome,
+      tipo: 'insumo',
+      saldo: Number(item.estoqueAtual),
+      limite: ESTOQUE_BAIXO_INSUMO,
+      unidade: item.unidadeMedida.toLowerCase(),
+      href: '/insumos',
+    }))
+  return [...deProdutos, ...deInsumos].sort((a, b) => a.saldo / a.limite - b.saldo / b.limite)
+}
+
+function AlertasEstoqueCompacto({
+  carregando,
+  alertas,
+}: {
+  carregando: boolean
+  alertas: AlertaEstoqueItem[]
+}) {
+  const [expandido, setExpandido] = useState(false)
+  const total = alertas.length
+  const exibir = expandido ? alertas : alertas.slice(0, ALERTAS_ESTOQUE_INICIAL)
+  const restantes = Math.max(0, total - ALERTAS_ESTOQUE_INICIAL)
+
+  return (
+    <Card>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <AlertTriangle className="size-4 shrink-0 text-warn" />
+          <h2 className="font-display text-xl font-semibold">Alertas de estoque</h2>
+          {total > 0 ? (
+            <Badge tone="warn">
+              {total} {total === 1 ? 'item' : 'itens'}
+            </Badge>
+          ) : null}
+        </div>
+        {total > ALERTAS_ESTOQUE_INICIAL ? (
+          <Button type="button" variant="ghost" className="text-sm" onClick={() => setExpandido((v) => !v)}>
+            {expandido ? 'Mostrar menos' : `Ver todos (${total})`}
+          </Button>
+        ) : null}
+      </div>
+
+      {carregando ? (
+        <LoadingBlock label="Verificando estoque…" />
+      ) : total === 0 ? (
+        <EmptyState
+          title="Estoque em dia"
+          description="Nenhuma vela ou material abaixo do limite de atenção."
+        />
+      ) : (
+        <ul
+          className={`divide-y divide-line rounded-xl border border-line bg-white/60 ${
+            expandido ? 'max-h-64 overflow-y-auto' : ''
+          }`}
+        >
+          {exibir.map((item) => (
+            <li
+              key={`${item.tipo}-${item.id}`}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="shrink-0">
+                  <Badge tone={item.tipo === 'produto' ? 'leaf' : 'warn'}>
+                    {item.tipo === 'produto' ? 'Vela' : 'Material'}
+                  </Badge>
+                </span>
+                <span className="truncate font-medium">{item.nome}</span>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="tabular-nums text-ink-soft">
+                  {item.saldo} / {item.limite} {item.unidade}
+                </span>
+                <Link
+                  to={item.href}
+                  className="inline-flex items-center gap-0.5 font-medium text-leaf hover:underline"
+                  title={item.tipo === 'produto' ? 'Abrir catálogo de produtos' : 'Abrir materiais para repor'}
+                >
+                  Repor
+                  <ChevronRight className="size-3.5" />
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!carregando && total > 0 && !expandido && restantes > 0 ? (
+        <p className="mt-2 text-xs text-ink-soft">
+          Exibindo os {ALERTAS_ESTOQUE_INICIAL} itens mais críticos. Use &quot;Ver todos&quot; para ver a lista
+          completa.
+        </p>
+      ) : null}
+    </Card>
+  )
+}
 
 function formatAniversarioDdMm(dataNascimento: string) {
   const [, month, day] = dataNascimento.split('-')
@@ -217,10 +337,10 @@ export function DashboardPage() {
     onError: (error) => toast.error(parseApiError(error, 'Não foi possível enviar o resumo diário.')),
   })
 
-  const produtosBaixos =
-    produtos.data?.filter((item) => item.estoqueAtual <= ESTOQUE_BAIXO_PRODUTO) ?? []
-  const insumosBaixos =
-    insumos.data?.filter((item) => Number(item.estoqueAtual) <= ESTOQUE_BAIXO_INSUMO) ?? []
+  const alertasEstoque = useMemo(
+    () => montarAlertasEstoque(produtos.data ?? [], insumos.data ?? []),
+    [produtos.data, insumos.data],
+  )
 
   const resultado = financeiro.data
   const lucroTone =
@@ -283,55 +403,50 @@ export function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Card>
-          <div className="mb-4 flex items-center gap-2">
-            <AlertTriangle className="size-4 text-warn" />
-            <h2 className="font-display text-xl font-semibold">Alertas de estoque</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Package className="size-4 text-leaf" />
+              <h2 className="font-display text-xl font-semibold">Entregas de hoje e próximas</h2>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={dispararDigest.isPending}
+              onClick={() => dispararDigest.mutate()}
+              title="Dispara o resumo das 7h (aniversários e entregas de hoje) para o WhatsApp da Maressa"
+            >
+              <Send className="size-4" />
+              {dispararDigest.isPending ? 'Enviando…' : 'Testar resumo das 7h'}
+            </Button>
           </div>
 
-          {produtos.isLoading || insumos.isLoading ? (
-            <LoadingBlock label="Verificando estoque…" />
-          ) : produtosBaixos.length === 0 && insumosBaixos.length === 0 ? (
+          {entregas.isLoading ? (
+            <LoadingBlock />
+          ) : entregas.isError ? (
             <EmptyState
-              title="Estoque em dia"
-              description="Nenhuma vela ou material abaixo do limite de atenção."
+              title="Não foi possível carregar as entregas"
+              description="Verifique a conexão com a API."
+            />
+          ) : (entregas.data?.hoje.length ?? 0) === 0 && (entregas.data?.proximas.length ?? 0) === 0 ? (
+            <EmptyState
+              title="Nenhuma entrega na agenda"
+              description="Quando um pedido tiver data de entrega, ele aparece aqui — hoje no topo e os próximos 7 dias ao lado."
             />
           ) : (
-            <TableShell>
-              <thead>
-                <tr>
-                  <Th>Item</Th>
-                  <Th>Tipo</Th>
-                  <Th>Saldo</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line bg-white/60">
-                {produtosBaixos.map((item) => (
-                  <tr key={`p-${item.id}`}>
-                    <Td>{item.nome}</Td>
-                    <Td>
-                      <Badge tone="leaf">Vela / kit</Badge>
-                    </Td>
-                    <Td>{item.estoqueAtual} un</Td>
-                  </tr>
-                ))}
-                {insumosBaixos.map((item) => (
-                  <tr key={`i-${item.id}`}>
-                    <Td>
-                      {item.nome}
-                      {item.marca ? ` · ${item.marca}` : ''}
-                    </Td>
-                    <Td>
-                      <Badge tone="warn">Material</Badge>
-                    </Td>
-                    <Td>
-                      {item.estoqueAtual} {item.unidadeMedida.toLowerCase()}
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </TableShell>
+            <div className="grid gap-6 sm:grid-cols-2">
+              <ListaEntregas
+                titulo="Hoje"
+                itens={entregas.data?.hoje ?? []}
+                vazio="Nenhuma entrega marcada para hoje."
+              />
+              <ListaEntregas
+                titulo="Próximos dias"
+                itens={entregas.data?.proximas ?? []}
+                vazio="Nenhuma entrega nos próximos 7 dias."
+              />
+            </div>
           )}
         </Card>
 
@@ -393,51 +508,10 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <Card className="mt-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Package className="size-4 text-leaf" />
-            <h2 className="font-display text-xl font-semibold">Entregas de hoje e próximas</h2>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={dispararDigest.isPending}
-            onClick={() => dispararDigest.mutate()}
-            title="Dispara o resumo das 7h (aniversários e entregas de hoje) para o WhatsApp da Maressa"
-          >
-            <Send className="size-4" />
-            {dispararDigest.isPending ? 'Enviando…' : 'Testar resumo das 7h'}
-          </Button>
-        </div>
-
-        {entregas.isLoading ? (
-          <LoadingBlock />
-        ) : entregas.isError ? (
-          <EmptyState
-            title="Não foi possível carregar as entregas"
-            description="Verifique a conexão com a API."
-          />
-        ) : (entregas.data?.hoje.length ?? 0) === 0 && (entregas.data?.proximas.length ?? 0) === 0 ? (
-          <EmptyState
-            title="Nenhuma entrega na agenda"
-            description="Quando um pedido tiver data de entrega, ele aparece aqui — hoje no topo e os próximos 7 dias ao lado."
-          />
-        ) : (
-          <div className="grid gap-6 sm:grid-cols-2">
-            <ListaEntregas
-              titulo="Hoje"
-              itens={entregas.data?.hoje ?? []}
-              vazio="Nenhuma entrega marcada para hoje."
-            />
-            <ListaEntregas
-              titulo="Próximos dias"
-              itens={entregas.data?.proximas ?? []}
-              vazio="Nenhuma entrega nos próximos 7 dias."
-            />
-          </div>
-        )}
-      </Card>
+      <AlertasEstoqueCompacto
+        carregando={produtos.isLoading || insumos.isLoading}
+        alertas={alertasEstoque}
+      />
     </div>
   )
 }
