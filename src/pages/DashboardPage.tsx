@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Cake, MessageCircle, Send } from 'lucide-react'
+import { AlertTriangle, Cake, MessageCircle, Package, Send } from 'lucide-react'
 import { toast } from 'sonner'
-import { clientesApi, financeiroApi, insumosApi, notificacoesApi, produtosApi } from '@/api/services'
+import { clientesApi, financeiroApi, insumosApi, notificacoesApi, pedidosApi, produtosApi } from '@/api/services'
 import { PeriodoFiltro } from '@/components/PeriodoFiltro'
 import {
   Badge,
@@ -17,8 +17,9 @@ import {
 } from '@/components/ui'
 import { usePeriodo } from '@/hooks/usePeriodo'
 import { abrirWhatsApp, sanitizarTelefoneBr } from '@/lib/whatsapp'
-import { formatCurrency, parseApiError } from '@/lib/utils'
-import type { AniversarianteResumo } from '@/types/api'
+import { formatCurrency, formatDate, parseApiError } from '@/lib/utils'
+import type { AniversarianteResumo, EntregaAgendada } from '@/types/api'
+import { statusPedidoLabel } from '@/lib/labels'
 
 const ESTOQUE_BAIXO_PRODUTO = 5
 const ESTOQUE_BAIXO_INSUMO = 20
@@ -43,6 +44,73 @@ function badgeAniversario(item: AniversarianteResumo): { label: string; tone: 'o
 
 function mensagemAniversario(nome: string) {
   return `Feliz aniversário, ${nome}! 🎂 — com carinho da Chamego`
+}
+
+function mensagemEntrega(item: EntregaAgendada) {
+  return `Oi, ${item.clienteNome}! Aqui é a Chamego 🕯️ Passando para confirmar a entrega do seu pedido (${item.resumoItens}) marcada para ${formatDate(item.dataEntrega)}.`
+}
+
+function tomEntrega(status: EntregaAgendada['status']): 'ok' | 'warn' | 'neutral' | 'danger' {
+  if (status === 'CONFIRMADO') return 'ok'
+  if (status === 'ORCAMENTO') return 'warn'
+  if (status === 'CANCELADO') return 'danger'
+  return 'neutral'
+}
+
+function ListaEntregas({
+  titulo,
+  itens,
+  vazio,
+}: {
+  titulo: string
+  itens: EntregaAgendada[]
+  vazio: string
+}) {
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-soft">{titulo}</h3>
+      {!itens.length ? (
+        <p className="text-sm text-ink-soft">{vazio}</p>
+      ) : (
+        <ul className="space-y-2">
+          {itens.map((item) => {
+            const temWhatsApp = !!sanitizarTelefoneBr(item.clienteTelefone)
+            const hoje = item.hoje || item.diasAteEntrega === 0
+            return (
+              <li
+                key={item.id}
+                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 ${
+                  hoje ? 'border-ok/40 bg-ok/10' : 'border-line bg-white/70'
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{item.clienteNome}</p>
+                  <p className="text-sm text-ink-soft">
+                    {formatDate(item.dataEntrega)} · {item.resumoItens} · {formatCurrency(item.valorTotal)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone={hoje ? 'ok' : 'leaf'}>{hoje ? 'Hoje' : `Em ${item.diasAteEntrega} dia${item.diasAteEntrega === 1 ? '' : 's'}`}</Badge>
+                  <Badge tone={tomEntrega(item.status)}>{statusPedidoLabel[item.status]}</Badge>
+                  {temWhatsApp ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="px-2 py-1.5 text-ok hover:bg-ok/10 hover:text-ok"
+                      title="Falar sobre a entrega no WhatsApp"
+                      onClick={() => abrirWhatsApp(item.clienteTelefone, mensagemEntrega(item))}
+                    >
+                      <MessageCircle className="size-4" />
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 function ListaAniversariantes({
@@ -111,6 +179,10 @@ export function DashboardPage() {
     queryKey: ['aniversariantes-painel'],
     queryFn: clientesApi.painelAniversariantes,
   })
+  const entregas = useQuery({
+    queryKey: ['entregas-painel'],
+    queryFn: () => pedidosApi.painelEntregas(7),
+  })
   const notificacaoConfig = useQuery({
     queryKey: ['notificacao-aniversario-config'],
     queryFn: notificacoesApi.configuracao,
@@ -129,6 +201,20 @@ export function DashboardPage() {
     },
     onError: (error) =>
       toast.error(parseApiError(error, 'Não foi possível disparar o lembrete de aniversários.')),
+  })
+  const dispararDigest = useMutation({
+    mutationFn: notificacoesApi.dispararDigestProprietaria,
+    onSuccess: (resposta) => {
+      if (!resposta.notificacaoEnviada) {
+        toast.message('Nenhum aniversário nem entrega hoje — nenhuma mensagem foi enviada.')
+        return
+      }
+      const destino = resposta.entreguePelaApi ? 'WhatsApp da Maressa' : 'log da API (WhatsApp ainda não configurado)'
+      toast.success(
+        `Resumo de hoje enviado (${resposta.aniversariantes} aniversário(s), ${resposta.entregas} entrega(s)) via ${destino}.`,
+      )
+    },
+    onError: (error) => toast.error(parseApiError(error, 'Não foi possível enviar o resumo diário.')),
   })
 
   const produtosBaixos =
@@ -306,6 +392,52 @@ export function DashboardPage() {
           )}
         </Card>
       </div>
+
+      <Card className="mt-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Package className="size-4 text-leaf" />
+            <h2 className="font-display text-xl font-semibold">Entregas de hoje e próximas</h2>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={dispararDigest.isPending}
+            onClick={() => dispararDigest.mutate()}
+            title="Dispara o resumo das 7h (aniversários e entregas de hoje) para o WhatsApp da Maressa"
+          >
+            <Send className="size-4" />
+            {dispararDigest.isPending ? 'Enviando…' : 'Testar resumo das 7h'}
+          </Button>
+        </div>
+
+        {entregas.isLoading ? (
+          <LoadingBlock />
+        ) : entregas.isError ? (
+          <EmptyState
+            title="Não foi possível carregar as entregas"
+            description="Verifique a conexão com a API."
+          />
+        ) : (entregas.data?.hoje.length ?? 0) === 0 && (entregas.data?.proximas.length ?? 0) === 0 ? (
+          <EmptyState
+            title="Nenhuma entrega na agenda"
+            description="Quando um pedido tiver data de entrega, ele aparece aqui — hoje no topo e os próximos 7 dias ao lado."
+          />
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2">
+            <ListaEntregas
+              titulo="Hoje"
+              itens={entregas.data?.hoje ?? []}
+              vazio="Nenhuma entrega marcada para hoje."
+            />
+            <ListaEntregas
+              titulo="Próximos dias"
+              itens={entregas.data?.proximas ?? []}
+              vazio="Nenhuma entrega nos próximos 7 dias."
+            />
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

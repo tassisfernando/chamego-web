@@ -45,6 +45,16 @@ export function todayIso() {
   return toIsoDate(new Date())
 }
 
+/** Data civil de hoje no fuso da operação (America/Sao_Paulo), no formato YYYY-MM-DD. */
+export function todayIsoSaoPaulo(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 export function parseApiError(error: unknown, fallback = 'Não foi possível concluir a ação.') {
   if (typeof error === 'object' && error !== null && 'response' in error) {
     const response = (error as { response?: { data?: { mensagem?: string } } }).response

@@ -148,6 +148,7 @@ export interface Pedido {
   id: string
   clienteId: string
   dataPedido: string
+  dataEntrega?: string | null
   status: StatusPedido
   natureza: NaturezaPedido
   observacao?: string | null
@@ -172,6 +173,7 @@ export interface RegistrarPedidoPayload {
   observacao?: string
   descontoPercentual?: number
   confirmarVenda?: boolean
+  dataEntrega?: string
   itens: ItemPedidoPayload[]
 }
 
@@ -248,6 +250,24 @@ export interface PainelAniversariantes {
   ultimos: AniversarianteResumo[]
 }
 
+export interface EntregaAgendada {
+  id: string
+  clienteId: string
+  clienteNome: string
+  clienteTelefone?: string | null
+  dataEntrega: string
+  status: StatusPedido
+  resumoItens: string
+  valorTotal: number
+  hoje: boolean
+  diasAteEntrega: number
+}
+
+export interface PainelEntregas {
+  hoje: EntregaAgendada[]
+  proximas: EntregaAgendada[]
+}
+
 export interface AtualizarProdutoPayload {
   nome: string
   descricao?: string
@@ -275,6 +295,7 @@ export interface AtualizarPedidoPayload {
   status?: StatusPedido
   observacao?: string
   descontoPercentual?: number
+  dataEntrega?: string
   itens: ItemPedidoPayload[]
 }
 

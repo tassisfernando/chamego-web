@@ -28,7 +28,7 @@ import { usePeriodo } from '@/hooks/usePeriodo'
 import { naturezaPedidoLabel, statusPedidoLabel } from '@/lib/labels'
 import { totaisPedido } from '@/lib/pedidoTotais'
 import { minDataOperacao } from '@/lib/periodo'
-import { formatCurrency, formatDate, parseApiError, todayIso } from '@/lib/utils'
+import { formatCurrency, formatDate, parseApiError, todayIso, todayIsoSaoPaulo } from '@/lib/utils'
 import type { AtualizarPedidoPayload, Cliente, NaturezaPedido, Pedido, StatusPedido } from '@/types/api'
 
 type ItemForm = {
@@ -54,6 +54,18 @@ function statusBadgeTone(status: StatusPedido): 'ok' | 'warn' | 'neutral' | 'dan
   return 'neutral'
 }
 
+function destaqueEntrega(dataEntrega: string | null | undefined, status: StatusPedido) {
+  if (!dataEntrega || status === 'CANCELADO') return null
+  const hoje = todayIsoSaoPaulo()
+  if (dataEntrega === hoje) {
+    return { selo: 'Hoje', tone: 'ok' as const, atrasada: false }
+  }
+  if (dataEntrega < hoje) {
+    return { selo: 'Atrasada', tone: 'danger' as const, atrasada: true }
+  }
+  return { selo: null, tone: 'neutral' as const, atrasada: false }
+}
+
 export function VendasPage() {
   const queryClient = useQueryClient()
   const { modo, ano, mes, periodo, setModo, setAno, setMes } = usePeriodo()
@@ -65,6 +77,7 @@ export function VendasPage() {
   const [filtroLista, setFiltroLista] = useState<FiltroLista>('TODOS')
   const [clienteId, setClienteId] = useState('')
   const [dataPedido, setDataPedido] = useState(todayIso())
+  const [dataEntrega, setDataEntrega] = useState('')
   const [natureza, setNatureza] = useState<NaturezaPedido>('VENDA')
   const [status, setStatus] = useState<StatusPedido>('CONFIRMADO')
   const [observacao, setObservacao] = useState('')
@@ -114,6 +127,7 @@ export function VendasPage() {
 
   function invalidarPedidos() {
     queryClient.invalidateQueries({ queryKey: ['pedidos'] })
+    queryClient.invalidateQueries({ queryKey: ['entregas-painel'] })
     queryClient.invalidateQueries({ queryKey: ['financeiro'] })
     queryClient.invalidateQueries({ queryKey: ['produtos'] })
     queryClient.invalidateQueries({ queryKey: ['produtos-opcoes'] })
@@ -140,6 +154,7 @@ export function VendasPage() {
     setEditando(null)
     setClienteId('')
     setDataPedido(todayIso())
+    setDataEntrega('')
     setNatureza('VENDA')
     setStatus('CONFIRMADO')
     setObservacao('')
@@ -156,6 +171,7 @@ export function VendasPage() {
     setEditando(pedido)
     setClienteId(pedido.clienteId)
     setDataPedido(pedido.dataPedido)
+    setDataEntrega(pedido.dataEntrega ?? '')
     setNatureza(pedido.natureza)
     setStatus(pedido.status)
     setObservacao(pedido.observacao ?? '')
@@ -243,6 +259,7 @@ export function VendasPage() {
     return {
       clienteId,
       dataPedido,
+      dataEntrega: dataEntrega || undefined,
       natureza,
       observacao: observacao.trim() || undefined,
       descontoPercentual: descontoPedido > 0 ? descontoPedido : undefined,
@@ -342,6 +359,7 @@ export function VendasPage() {
             <thead>
               <tr>
                 <Th>Data</Th>
+                <Th>Entrega</Th>
                 <Th>Cliente</Th>
                 <Th>Tipo</Th>
                 <Th>Status</Th>
@@ -352,9 +370,23 @@ export function VendasPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line bg-white/70">
-              {lista.map((pedido) => (
+              {lista.map((pedido) => {
+                const entrega = destaqueEntrega(pedido.dataEntrega, pedido.status)
+                return (
                 <tr key={pedido.id}>
                   <Td>{formatDate(pedido.dataPedido)}</Td>
+                  <Td>
+                    {entrega ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={entrega.atrasada ? 'font-medium text-danger' : undefined}>
+                          {formatDate(pedido.dataEntrega)}
+                        </span>
+                        {entrega.selo ? <Badge tone={entrega.tone}>{entrega.selo}</Badge> : null}
+                      </div>
+                    ) : (
+                      <span className="text-ink-soft">—</span>
+                    )}
+                  </Td>
                   <Td className="font-medium">{clienteMap.get(pedido.clienteId) ?? 'Cliente'}</Td>
                   <Td>{naturezaPedidoLabel[pedido.natureza]}</Td>
                   <Td>
@@ -397,7 +429,8 @@ export function VendasPage() {
                     </div>
                   </Td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </TableShell>
           {pedidos.data ? (
@@ -414,7 +447,7 @@ export function VendasPage() {
         description="Escolha a cliente e os produtos. Os totais atualizam conforme descontos."
       >
         <form className="grid gap-4" onSubmit={editando ? onSubmitEdicao : (e) => e.preventDefault()}>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <Field label="Cliente" className="md:col-span-2">
               <div className="flex flex-wrap items-stretch gap-2">
                 <ClienteCombobox
@@ -428,13 +461,20 @@ export function VendasPage() {
                 </Button>
               </div>
             </Field>
-            <Field label="Data">
+            <Field label="Data do pedido">
               <Input
                 type="date"
                 required
                 min={minDataOperacao()}
                 value={dataPedido}
                 onChange={(e) => setDataPedido(e.target.value)}
+              />
+            </Field>
+            <Field label="Data de entrega">
+              <Input
+                type="date"
+                value={dataEntrega}
+                onChange={(e) => setDataEntrega(e.target.value)}
               />
             </Field>
           </div>

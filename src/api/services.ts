@@ -17,6 +17,7 @@ import type {
   LoginResposta,
   Pagina,
   PainelAniversariantes,
+  PainelEntregas,
   ParametrosPaginacao,
   ItemPrecificacao,
   Pedido,
@@ -135,6 +136,8 @@ export const pedidosApi = {
   atualizar: async (id: string, payload: AtualizarPedidoPayload) =>
     (await api.put<Pedido>(`/api/pedidos/${id}`, payload)).data,
   concretizar: async (id: string) => (await api.post<Pedido>(`/api/pedidos/${id}/concretizar`)).data,
+  painelEntregas: async (horizonteDias = 7) =>
+    (await api.get<PainelEntregas>('/api/pedidos/entregas/painel', { params: { horizonteDias } })).data,
   excluir: async (id: string) => {
     await api.delete(`/api/pedidos/${id}`)
   },
@@ -186,11 +189,21 @@ export type DisparoAniversarioResposta = {
   notificacaoEnviada: boolean
 }
 
+export type DisparoResumoDiarioResposta = {
+  dataReferencia: string
+  aniversariantes: number
+  entregas: number
+  notificacaoEnviada: boolean
+  entreguePelaApi: boolean
+}
+
 export const notificacoesApi = {
   configuracao: async () =>
     (await api.get<NotificacaoAniversarioConfig>('/api/notifications/birthdays/config')).data,
   dispararResumoDiario: async () =>
     (await api.post<DisparoAniversarioResposta>('/api/notifications/birthdays/trigger')).data,
+  dispararDigestProprietaria: async () =>
+    (await api.post<DisparoResumoDiarioResposta>('/api/notifications/daily-digest/trigger')).data,
 }
 
 export const precificacoesApi = {
